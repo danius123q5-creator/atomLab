@@ -182,6 +182,37 @@ public class LabUI : MonoBehaviour
         DrawPicker();
         DrawMenu();
         DrawCarry(e);
+        DrawHoverTip();
+    }
+
+    /// <summary>21.09, из очереди владельца на 2.2: «подсказка при наведении на атом:
+    /// название, заряд, связи». Только для мыши: у пальца нет «наведения», на телефоне то же
+    /// самое показывает меню по долгому нажатию. Не мешаем, когда что-то тащат, тянут рамку,
+    /// открыто меню или курсор над панелью.</summary>
+    void DrawHoverTip()
+    {
+        if (Input.touchCount > 0 || Application.isMobilePlatform) return;
+        if (Lab.I == null || PointerOverUI || menuAtom != null || carrying != null || Lab.I.Banding) return;
+        if (Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2)) return;
+        var a = Lab.I.PickAtom(Input.mousePosition);
+        if (a == null) return;
+        var el = a.El;
+        int used = a.UsedBonds;
+        string cap = el.MaxBonds > el.Valence ? el.Valence + Lang.T(" (до ", " (up to ") + el.MaxBonds + ")" : el.Valence.ToString();
+        string charge = el.Charge == 0 ? Lang.T("нейтральный", "neutral") : (el.Charge > 0 ? "+" + el.Charge : el.Charge.ToString());
+        string text = Lang.Name(el) + " (" + el.Sym + ")\n" +
+                      Lang.T("Заряд: ", "Charge: ") + charge + "\n" +
+                      Lang.T("Связи: занято ", "Bonds: used ") + used + Lang.T(" из ", " of ") + cap;
+        Vector2 m = MouseGui;
+        var r = new Rect(m.x + 18f, m.y + 12f, 220f, 58f);
+        if (r.xMax > SW - 6f) r.x = m.x - r.width - 12f;
+        if (r.yMax > SH - 6f) r.y = m.y - r.height - 8f;
+        GUI.color = new Color(0f, 0f, 0f, 0.8f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(el.Color.r, el.Color.g, el.Color.b, 1f);
+        GUI.DrawTexture(new Rect(r.x, r.y, 3f, r.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(r.x + 9f, r.y + 3f, r.width - 12f, r.height - 4f), text, sSmall);
     }
 
     void HandleInput(Event e)

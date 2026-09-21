@@ -732,6 +732,11 @@ public class Lab : MonoBehaviour
 
     public void SaveZone()
     {
+        // 21.09. Самопроверка писала в ТЕ ЖЕ настройки, что и игра игрока: собрав по разу все
+        // 92 вещества, она «открыла» владельцу весь справочник, накрутила очки и стёрла его
+        // зону (проверка чистит зону перед каждым опытом). Прогон проверки — не игра: ничего
+        // не сохраняем.
+        if (SelfTest.Requested) return;
         try
         {
             var list = Atom.All;
@@ -793,6 +798,11 @@ public class Lab : MonoBehaviour
 
     void SaveProgress()
     {
+        // 21.09. Самопроверка писала в ТЕ ЖЕ настройки, что и игра игрока: собрав по разу все
+        // 92 вещества, она «открыла» владельцу весь справочник, накрутила очки и стёрла его
+        // зону (проверка чистит зону перед каждым опытом). Прогон проверки — не игра: ничего
+        // не сохраняем.
+        if (SelfTest.Requested) return;
         PlayerPrefs.SetString("atomlab.discovered", string.Join(",", new List<string>(Discovered).ToArray()));
         PlayerPrefs.SetInt("atomlab.score", Score);
         var done = new List<string>();

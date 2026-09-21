@@ -92,6 +92,36 @@ public static class BuildScript
     }
 
 
+    /// <summary>Сборка под macOS (из очереди владельца на 2.2). Модуль MacStandaloneSupport
+    /// стоит. На выходе AtomLab.app — папка; для раздачи пакуется в zip. Подписи Apple у нас
+    /// нет, поэтому мак при первом запуске скажет «разработчик не проверен»: открывать через
+    /// правую кнопку -> «Открыть». Это написано в заметках к релизу.</summary>
+    public static void BuildMac()
+    {
+        var scenes = EnsureScene();
+        NoSplash();
+        PlayerSettings.productName = "AtomLab";
+        PlayerSettings.companyName = "Danich";
+        PlayerSettings.defaultScreenWidth = 1600;
+        PlayerSettings.defaultScreenHeight = 900;
+        PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+        PlayerSettings.resizableWindow = true;
+
+        var opts = new BuildPlayerOptions
+        {
+            scenes = scenes,
+            locationPathName = "Build/Mac/AtomLab.app",
+            target = BuildTarget.StandaloneOSX,
+            options = BuildOptions.None,
+        };
+
+        var report = BuildPipeline.BuildPlayer(opts);
+        var s = report.summary;
+        Debug.Log("MAC BUILD RESULT: " + s.result + "  size=" + s.totalSize + " bytes  errors=" + s.totalErrors);
+        if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
+    }
+
+
     /// <summary>Сборка под Android:
     /// Unity.exe -batchmode -quit -projectPath "..." -executeMethod BuildScript.BuildAndroid
     ///
