@@ -33,7 +33,7 @@ public class LabUI : MonoBehaviour
     const float HandleW = 30f;  // язычок, торчащий из-за края, когда панель закрыта
     float tableTop;             // верх области таблицы в координатах панели
 
-    GUIStyle sCell, sTitle, sSmall, sTab, sToast, sWorld, sNote;
+    GUIStyle sCell, sTitle, sSmall, sTab, sToast, sWorld, sNote, sBig;
 
     public bool PointerOverUI
     {
@@ -70,6 +70,7 @@ public class LabUI : MonoBehaviour
         sTab = new GUIStyle(GUI.skin.button) { fontSize = 13 };
         sToast = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold, wordWrap = true, alignment = TextAnchor.MiddleCenter };
         sWorld = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+        sBig = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold };
     }
 
     // ==================== геометрия таблицы ====================
@@ -111,6 +112,7 @@ public class LabUI : MonoBehaviour
         DrawWorldLabels();
         DrawPanel(cw, ch);
         DrawHud();
+        DrawFormulaCard();
         DrawCarry(e);
     }
 
@@ -380,6 +382,49 @@ public class LabUI : MonoBehaviour
             GUI.color = Color.white;
             sToast.normal.textColor = lab.ToastColor;
             GUI.Label(tr, lab.Toast, sToast);
+        }
+    }
+
+
+    /// <summary>Карточка собранного — в левом нижнем углу (🔴 21.09, просьба владельца).
+    /// Показывает САМУЮ КРУПНУЮ молекулу в зоне: формулу, название и строчку про неё.
+    /// Прижата не к краю экрана, а к краю СВОБОДНОЙ части: под открытой панелью её было бы
+    /// просто не видно, панель непрозрачная.</summary>
+    void DrawFormulaCard()
+    {
+        var lab = Lab.I;
+        if (lab == null) return;
+
+        Lab.Mol best = null;
+        foreach (var m in lab.Mols)
+            if (m.Atoms.Count > 1 && (best == null || m.Atoms.Count > best.Atoms.Count)) best = m;
+        if (best == null) return;
+
+        float x = PanelRightPx + 20f;
+        float w = Mathf.Min(430f, Screen.width - x - 20f);
+        if (w < 160f) return;
+        float h = best.Info != null ? 104f : 78f;
+        var r = new Rect(x, Screen.height - h - 20f, w, h);
+
+        GUI.color = new Color(0f, 0f, 0f, 0.6f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = best.Info != null ? new Color(0.4f, 0.9f, 0.5f, 0.9f) : new Color(0.5f, 0.6f, 0.8f, 0.7f);
+        GUI.DrawTexture(new Rect(r.x, r.y, 4f, r.height), Texture2D.whiteTexture);   // цветная полоска слева
+        GUI.color = Color.white;
+
+        sBig.normal.textColor = best.Info != null ? new Color(0.65f, 1f, 0.7f) : Color.white;
+        GUI.Label(new Rect(r.x + 14f, r.y + 6f, r.width - 24f, 32f), best.Formula, sBig);
+
+        if (best.Info != null)
+        {
+            GUI.Label(new Rect(r.x + 14f, r.y + 38f, r.width - 24f, 22f), best.Info.Name, sTitle);
+            GUI.Label(new Rect(r.x + 14f, r.y + 60f, r.width - 24f, 38f), best.Info.Note, sSmall);
+        }
+        else
+        {
+            GUI.Label(new Rect(r.x + 14f, r.y + 38f, r.width - 24f, 34f),
+                "Такого вещества в справочнике нет — слепить можно, а в природе такая связка не живёт.\nАтомов: " + best.Atoms.Count +
+                ", свободных связей: " + best.FreeLeft + ".", sSmall);
         }
     }
 
