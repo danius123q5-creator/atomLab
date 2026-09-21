@@ -77,7 +77,11 @@ public static class MolFacts
             if (!metals.Contains(a.El.Sym)) metals.Add(a.El.Sym);
             foreach (var b in a.Bonds) { var o = b.Other(a); if (o != null && IsMetal(o.El)) metalMetal = true; }
         }
-        if (metals.Count < 2 && !metalMetal) return null;
+        int metalAtoms = 0; foreach (var a in m.Atoms) if (IsMetal(a.El)) metalAtoms++;
+        // 21.09 (скриншот владельца: C15H21Fe4N2O9P — четыре железа в органике, а игра молчала).
+        // Несколько атомов металла в одной НЕИЗВЕСТНОЙ молекуле — тоже не держится: металл в
+        // органике бывает (ферроцен, гем), но по одному атому и в особом окружении.
+        if (metals.Count < 2 && !metalMetal && metalAtoms < 2) return null;
 
         var why = new List<string>();
         if (metals.Count >= 2)
@@ -86,6 +90,11 @@ public static class MolFacts
                                                               ") — metals do not build one molecule, they give away electrons and become ions"));
         if (metalMetal)
             why.Add(Lang.T("связь металл–металл — это сплав, а не молекула", "a metal–metal bond is an alloy, not a molecule"));
+        if (metals.Count < 2 && metalAtoms >= 2)
+            why.Add(metalAtoms + Lang.T(" атома металла ", " metal atoms ") + "(" + metals[0] + ")" +
+                    (have.Contains("C") ? Lang.T(" в одной органической молекуле — металл в органике держится поодиночке и в особом окружении (как железо в гемоглобине)",
+                                                 " in one organic molecule — a metal stays in organics only one at a time and in a special pocket (like iron in haemoglobin)")
+                                        : Lang.T(" в одной частице — это кусок соли или оксида, а не молекула", " in one particle — a piece of salt or oxide, not a molecule")));
 
         // На что распалось бы: каждый металл уходит к самому «жадному» неметаллу, который есть.
         string[] partners = { "F", "O", "Cl", "N", "S", "Br", "I" };
@@ -150,7 +159,12 @@ public static class MolFacts
             tips.Add(Lang.T("оставь один металл — ", "keep one metal — ") + keep + Lang.T(", убери ", ", remove ") + string.Join(", ", drop.ToArray()));
         }
 
-        // Ближайшее настоящее вещество: меньше всего атомов добавить и убрать.
+        // Ближайшее настоящее вещество: меньше всего атомов добавить и убрать. Металлы из
+        // сравнения убираем — их и так советуем убрать; иначе совет тянет к солям железа.
+        // 21.09: «убери 3 C, 2 N, 4 Fe, 1 P — получишь сахарозу» из 52 атомов — это не совет.
+        // Показываем, только если до вещества рукой подать: не больше пятой части атомов.
+        if (metals.Count > 0) { var noMet = new Dictionary<string, int>(); foreach (var kv in have) if (!metals.Contains(kv.Key)) noMet[kv.Key] = kv.Value; have = noMet; }
+        int total = 0; foreach (var kv in have) total += kv.Value;
         Molecules.Info best = null; int bestCost = int.MaxValue; Dictionary<string, int> bestComp = null;
         foreach (var info in Molecules.DB.Values)
         {
@@ -167,7 +181,7 @@ public static class MolFacts
             int score = cost * 4 + newEls;
             if (score < bestCost) { bestCost = score; best = info; bestComp = comp; }
         }
-        if (best != null && bestCost > 0 && bestCost / 4 <= Mathf.Max(6, m.Atoms.Count))
+        if (best != null && bestCost > 0 && bestCost / 4 <= Mathf.Max(3, total / 5))
         {
             var add = new List<string>(); var rem = new List<string>();
             foreach (var kv in bestComp) { int h0; have.TryGetValue(kv.Key, out h0); if (kv.Value > h0) add.Add((kv.Value - h0) + " " + kv.Key); else if (kv.Value < h0) rem.Add((h0 - kv.Value) + " " + kv.Key); }
@@ -177,6 +191,9 @@ public static class MolFacts
                          (rem.Count > 0 ? Lang.T("убери ", "remove ") + string.Join(", ", rem.ToArray()) : "");
             tips.Add(Lang.T("ближе всего настоящее ", "the nearest real substance is ") + Lang.Name(best) + " (" + best.Formula + "): " + how);
         }
+        if (best == null || bestCost / 4 > Mathf.Max(3, total / 5))
+            tips.Add(Lang.T("до настоящего вещества отсюда далеко — такие большие случайные сборки в природе не встречаются; начни с ядра поменьше",
+                            "far from any real substance — big random assemblies like this do not occur in nature; start from a smaller core"));
         if (tips.Count == 0) return null;
         return Lang.T("Для стабильности: ", "For stability: ") + string.Join("; ", tips.ToArray()) + ".";
     }

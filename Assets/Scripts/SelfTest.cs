@@ -211,6 +211,18 @@ public class SelfTest : MonoBehaviour
         string adv = null; foreach (var mm in lab.Mols) if (mm.Atoms.Count == 4) adv = MolFacts.Advice(mm);
         bool advOk = adv != null && adv.Contains("CH4") && (adv.Contains("водород") || adv.Contains("hydrogen"));
         Debug.Log("SELFTEST advice CH3: " + (adv ?? "нет совета") + (advOk ? " OK" : " MISMATCH"));
+
+        // 21.09: два железа в органике — предупреждение обязано быть, хотя металл один и тот же.
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        var feC = Atom.Spawn(Elements.BySymbol("C"), c);
+        var feA = Atom.Spawn(Elements.BySymbol("Fe"), c + Vector3.left * 3f);
+        var feB = Atom.Spawn(Elements.BySymbol("Fe"), c + Vector3.right * 3f);
+        var feO = Atom.Spawn(Elements.BySymbol("O"), c + Vector3.up * 3f);
+        lab.BondByHand(feC, feA); lab.BondByHand(feC, feB); lab.BondByHand(feC, feO);
+        yield return new WaitForSeconds(0.3f); lab.Recompute();
+        string feU = null; foreach (var mm in lab.Mols) if (mm.Atoms.Count >= 4) feU = MolFacts.Instability(mm);
+        Debug.Log("SELFTEST two Fe in organics: " + (feU != null ? "предупреждение есть" : "МОЛЧИТ") + (feU != null ? " OK" : " MISMATCH"));
+        lab.ClearZone();
         lab.ClearZone();
         lab.ClearZone();
         lab.ClearZone();
