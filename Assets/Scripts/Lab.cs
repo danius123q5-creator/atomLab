@@ -30,6 +30,8 @@ public class Lab : MonoBehaviour
     // ——— перетаскивание атома мышью/пальцем ———
     Atom dragged;
     float dragDepth;
+    Vector3 rmbDown;        // где нажали правую кнопку — чтобы отличить щелчок от вращения камеры
+    float rmbTime;
 
     // ——— выделение рамкой и буфер обмена (🔴 21.09, владелец: «выделятор как в виндовс») ———
     public readonly HashSet<Atom> Selected = new HashSet<Atom>();
@@ -180,6 +182,23 @@ public class Lab : MonoBehaviour
             Vector3 target = Cam.ScreenToWorldPoint(sp);
             Vector3 d = target - dragged.transform.position;
             dragged.Body.linearVelocity = d * 12f;      // тянем скоростью, а не телепортом — связи целы
+        }
+
+        // 🔴 21.09, владелец: «контекстное меню не открывается у атомов». Так и было: меню
+        // в 1.8 нарисовано, а открывать его оказалось НЕКОМУ — кусок кода, который ловит щелчок,
+        // не записался при сбое правки, и никто этого не заметил: проверки игры гоняют химию,
+        // а мышь не трогают. Вот он.
+        //
+        // Правая кнопка БЕЗ протяжки — меню атома. С протяжкой правая по-прежнему вертит
+        // камеру, поэтому меню открывается, только если мышь стояла на месте.
+        if (Input.GetMouseButtonDown(1)) { rmbDown = Input.mousePosition; rmbTime = Time.time; }
+        if (Input.GetMouseButtonUp(1) && !overPanel && !Input.GetKey(KeyCode.LeftShift))
+        {
+            if ((Input.mousePosition - rmbDown).magnitude < 8f && Time.time - rmbTime < 0.7f)
+            {
+                var hit = PickAtom(Input.mousePosition);
+                if (hit != null && LabUI.I != null) LabUI.I.OpenMenu(hit, Input.mousePosition);
+            }
         }
 
         // Правая кнопка по атому с Shift — убрать атом.

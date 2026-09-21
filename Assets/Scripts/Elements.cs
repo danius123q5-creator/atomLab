@@ -21,7 +21,7 @@ public static class Elements
     /// неметаллы, зелёный радиоактивные, жёлтый — те, о которых толком ничего не известно.
     /// Порядок проверки важен: сверхтяжёлые элементы и радиоактивны, и неизучены, поэтому
     /// «неизвестный» перебивает «радиацию», иначе жёлтого в таблице не было бы совсем.</summary>
-    public enum Paint { Metal, Nonmetal, Radioactive, Unknown, Synthetic }
+    public enum Paint { Metal, Nonmetal, Radioactive, Unknown, Synthetic, Assembled }
 
     public class El
     {
@@ -37,6 +37,17 @@ public static class Elements
         /// <summary>Добыт в ускорителе, а не выдан таблицей. Такие клетки голубые и стоят
         /// отдельным рядом под таблицей.</summary>
         public bool Synthetic;
+
+        /// <summary>Собран вручную из протонов, нейтронов и электронов. Такие клетки
+        /// оранжевые. У них, в отличие от обычных клеток, записано ЧИСЛО НЕЙТРОНОВ и ЗАРЯД —
+        /// то есть это конкретный изотоп или ион, а не элемент вообще.</summary>
+        public bool Assembled;
+        public int Neutrons;
+        public int Charge;
+
+        /// <summary>Массовое число: протоны плюс нейтроны. У обычной клетки таблицы его нет —
+        /// там стоит средняя масса всех изотопов, дробная.</summary>
+        public int MassNumber { get { return Z + Neutrons; } }
 
         /// <summary>Радиус шарика — от НАСТОЯЩЕГО ковалентного радиуса элемента (таблица
         /// Кордеро, пикометры), а не от номера строки.
@@ -66,6 +77,7 @@ public static class Elements
         {
             get
             {
+                if (Assembled) return Elements.Paint.Assembled;
                 if (Synthetic) return Elements.Paint.Synthetic;
                 if (Z >= 104) return Elements.Paint.Unknown;
                 if (Z == 43 || Z == 61 || Z >= 84) return Elements.Paint.Radioactive;
@@ -92,6 +104,7 @@ public static class Elements
                     case Elements.Paint.Nonmetal: return new Color(0.20f, 0.45f, 0.88f);
                     case Elements.Paint.Radioactive: return new Color(0.20f, 0.72f, 0.32f);
                     case Elements.Paint.Synthetic: return new Color(0.35f, 0.80f, 1.00f);
+                    case Elements.Paint.Assembled: return new Color(1.00f, 0.55f, 0.10f);
                     default: return new Color(0.92f, 0.80f, 0.18f);
                 }
             }
@@ -107,6 +120,7 @@ public static class Elements
                     case Elements.Paint.Nonmetal: return "неметалл";
                     case Elements.Paint.Radioactive: return "радиоактивный";
                     case Elements.Paint.Synthetic: return "синтезирован в ускорителе";
+                    case Elements.Paint.Assembled: return "собран из частиц";
                     default: return "неизученный";
                 }
             }
@@ -285,11 +299,21 @@ public static class Elements
         El e; return _bySym.TryGetValue(sym, out e) ? e : null;
     }
 
-    /// <summary>Элемент по порядковому номеру, 1..118.</summary>
+    /// <summary>Элемент по порядковому номеру.
+    ///
+    /// 🔴 21.09. Раньше здесь стояло _all[z - 1] — номер брался как МЕСТО В МАССИВЕ. Пока в
+    /// таблице были только настоящие 118 элементов, место и номер совпадали. Как только снизу
+    /// прирос свой ряд (добытые в ускорителе и собранные из частиц), совпадение кончилось, и
+    /// «элемент 119» оказывался литием-34. Поймала это проверка синтеза: Og + H дали Z=3.
+    ///
+    /// Теперь ищем ПО НОМЕРУ. Собранные вручную пропускаем: у изотопа кислорода-18 номер
+    /// тоже восемь, но «элемент номер 8» — это кислород, а не одна из его записей.</summary>
     public static El ByZ(int z)
     {
         if (_all == null) Parse();
-        return (z >= 1 && z <= _all.Length) ? _all[z - 1] : null;
+        for (int i = 0; i < _all.Length; i++)
+            if (_all[i].Z == z && !_all[i].Assembled) return _all[i];
+        return null;
     }
 
     /// <summary>Записать в таблицу элемент, склеенный в ускорителе. 🔴 21.09, владелец:
@@ -323,12 +347,82 @@ public static class Elements
             Synthetic = true,
         };
 
+        // Не сортируем: порядок в массиве больше ничего не значит, а сортировка мешала бы
+        // рядам «добытых» и «собранных» стоять в порядке появления.
         var list = new List<El>(_all);
         list.Add(el);
-        list.Sort((x, y) => x.Z.CompareTo(y.Z));
         _all = list.ToArray();
         _bySym[sym] = el;
         return el;
+    }
+
+    /// <summary>Записать в таблицу собранный вручную атом: изотоп (столько-то нейтронов)
+    /// или ион (электронов не поровну с протонами). 🔴 21.09, владелец: режим «сборка атома»,
+    /// результат сохраняется в таблицу оранжевым.
+    ///
+    /// Обозначения настоящие: кислород с десятью нейтронами — это кислород-18 (8 протонов
+    /// плюс 10 нейтронов), а железо, потерявшее три электрона, — Fe3+.</summary>
+    public static El AddAssembled(int z, int neutrons, int charge)
+    {
+        if (_all == null) Parse();
+
+        var baseEl = ByZ(z);
+        string bSym = baseEl != null ? baseEl.Sym : SystematicSymbol(z);
+        string bName = baseEl != null ? baseEl.Name : SystematicName(z);
+
+        int a = z + neutrons;
+        string sym = bSym + "-" + a;
+        string name = bName + "-" + a;
+        if (charge != 0)
+        {
+            string sign = charge > 0 ? "+" : "-";
+            string mag = Mathf.Abs(charge) > 1 ? Mathf.Abs(charge).ToString() : "";
+            sym += " " + mag + sign;
+            name += " (ион " + mag + sign + ")";
+        }
+
+        var found = BySymbol(sym);
+        if (found != null) return found;
+
+        var el = new El
+        {
+            Z = z,
+            Sym = sym,
+            Name = name,
+            Mass = a,
+            Group = baseEl != null ? baseEl.Group : 0,
+            Period = baseEl != null ? baseEl.Period : 8,
+            // Ион уже отдал или взял электроны — связей у него ровно столько, сколько он
+            // отдал/взял. Нейтральный собранный атом ведёт себя как обычный элемент.
+            Valence = charge != 0 ? Mathf.Abs(charge) : (baseEl != null ? baseEl.Valence : 4),
+            EN = baseEl != null ? baseEl.EN : 0f,
+            Color = new Color(1.00f, 0.55f, 0.10f),
+            Class = baseEl != null ? baseEl.Class : Cls.Actin,
+            Assembled = true,
+            Neutrons = neutrons,
+            Charge = charge,
+        };
+
+        var list = new List<El>(_all);
+        list.Add(el);
+        _all = list.ToArray();
+        _bySym[sym] = el;
+        return el;
+    }
+
+    /// <summary>Устойчив ли такой изотоп. Считаем по числу нейтронов: у лёгких элементов их
+    /// примерно поровну с протонами, у тяжёлых — в полтора раза больше. Ожидаемое число
+    /// берём из настоящей средней массы элемента, допуск растёт с номером.
+    ///
+    /// 🔴 Это прикидка, а не таблица нуклидов: настоящая устойчивость — штука пятнистая,
+    /// у технеция стабильных изотопов нет вовсе, хотя по этой прикидке они «должны» быть.</summary>
+    public static bool IsStableIsotope(int z, int neutrons, out int expected)
+    {
+        var baseEl = ByZ(z);
+        expected = baseEl != null ? Mathf.RoundToInt(baseEl.Mass) - z : Mathf.RoundToInt(z * 1.5f);
+        if (z == 43 || z == 61 || z >= 84) return false;      // здесь стабильных нет по-настоящему
+        float tol = 2f + z * 0.06f;
+        return Mathf.Abs(neutrons - expected) <= tol;
     }
 
     static readonly string[] ROOT_RU = { "нил", "ун", "би", "три", "квад", "пент", "гекс", "септ", "окт", "энн" };

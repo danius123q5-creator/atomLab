@@ -86,6 +86,16 @@ Compress-Archive -Path (Join-Path $buildDir "*") -DestinationPath $zip -Compress
 $zipMb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 Write-Host ("Archive: " + $zip + "  " + $zipMb + " MB")
 
+# Android build, if it was made. The apk is renamed with the version so that two releases
+# never carry files of the same name.
+$apkSrc = Join-Path $root "Build\Android\AtomLab.apk"
+$apk = $null
+if (Test-Path $apkSrc) {
+    $apk = Join-Path $root ("dist\AtomLab_" + $Ver + ".apk")
+    Copy-Item -LiteralPath $apkSrc -Destination $apk -Force
+    Write-Host ("APK: " + $apk + "  " + [math]::Round((Get-Item $apk).Length / 1MB, 1) + " MB")
+}
+
 # ---- release ----
 # Refuse to touch an existing release: replacing one means deleting it first.
 $exists = $null
@@ -102,16 +112,21 @@ Write-Host ("Release created: " + $rel.html_url)
 
 $uploadBase = $rel.upload_url -replace '\{.*\}$', ''
 $uh = @{ Authorization = "Bearer $tok"; "User-Agent" = "AtomLabPublish" }
-$name = Split-Path $zip -Leaf
-for ($try = 1; $try -le 3; $try++) {
-    try {
-        Invoke-RestMethod -Uri ($uploadBase + "?name=$name") -Headers $uh -Proxy $proxy -TimeoutSec 900 `
-            -Method Post -InFile $zip -ContentType "application/octet-stream" | Out-Null
-        break
-    } catch {
-        Write-Host ("  attempt $try failed: " + $_.Exception.Message)
-        if ($try -eq 3) { throw }
-        Start-Sleep -Seconds 5
+$files = @($zip)
+if ($apk) { $files += $apk }
+foreach ($f in $files) {
+    $name = Split-Path $f -Leaf
+    Write-Host ("Uploading " + $name + "...")
+    for ($try = 1; $try -le 3; $try++) {
+        try {
+            Invoke-RestMethod -Uri ($uploadBase + "?name=$name") -Headers $uh -Proxy $proxy -TimeoutSec 900 `
+                -Method Post -InFile $f -ContentType "application/octet-stream" | Out-Null
+            break
+        } catch {
+            Write-Host ("  attempt $try failed: " + $_.Exception.Message)
+            if ($try -eq 3) { throw }
+            Start-Sleep -Seconds 5
+        }
     }
 }
 

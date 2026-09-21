@@ -83,7 +83,14 @@ public class LabUI : MonoBehaviour
     {
         float cw = CellW, ch = cw * 1.12f;
         int row, col;
-        if (e.Synthetic)
+        if (e.Assembled)
+        {
+            // Собранные из частиц — своим рядом, ниже добытых в ускорителе.
+            int idx = 0;
+            foreach (var x in Elements.All) { if (x == e) break; if (x.Assembled) idx++; }
+            row = 13 + idx / 18; col = idx % 18;
+        }
+        else if (e.Synthetic)
         {
             // Добытые в ускорителе стоят своим рядом внизу, по порядку появления.
             int idx = 0;
@@ -112,8 +119,12 @@ public class LabUI : MonoBehaviour
         Styles();
         var e = Event.current;
         float cw = CellW, ch = cw * 1.12f;
-        tableTop = 210f;
-        scrollMax = Mathf.Max(0f, (10f * ch + 40f) - (Screen.height - tableTop - 8f));
+        tableTop = 274f;
+        // Рядов теперь не десять: снизу прирастают голубые (ускоритель) и оранжевые (сборка).
+        int extraRows = 0;
+        foreach (var el in Elements.All) if (el.Assembled) extraRows++;
+        int rows = 15 + extraRows / 18;
+        scrollMax = Mathf.Max(0f, (rows * ch + 40f) - (Screen.height - tableTop - 8f));
 
         HandleInput(e);
 
@@ -124,6 +135,8 @@ public class LabUI : MonoBehaviour
         DrawFormulaCard();
         DrawZoneButtons();
         DrawAccelerator();
+        DrawBuilder();
+        DrawQuarks();
         DrawMenu();
         DrawCarry(e);
     }
@@ -238,6 +251,16 @@ public class LabUI : MonoBehaviour
         }
         GUI.color = Color.white;
 
+        GUI.color = quarkOn ? new Color(0.85f, 0.6f, 1f) : Color.white;
+        if (GUI.Button(new Rect(panelX + 14f, 202f, W - 28f, 26f),
+            quarkOn ? "← выйти из сборки кварков" : "Сборка из кварков (этаж ниже атома)", sTab))
+            ToggleQuarks();
+
+        GUI.color = builderOn ? new Color(1f, 0.7f, 0.35f) : Color.white;
+        if (GUI.Button(new Rect(panelX + 14f, 170f, W - 28f, 26f),
+            builderOn ? "← выйти из сборки атома" : "Сборка атома (протоны, нейтроны, электроны)", sTab))
+            ToggleBuilder();
+
         GUI.color = accelOn ? new Color(0.5f, 0.9f, 1f) : Color.white;
         if (GUI.Button(new Rect(panelX + 14f, 138f, W - 28f, 26f),
             accelOn ? "← выйти из ускорителя" : "Ускоритель частиц (склеить ядра)", sTab))
@@ -277,14 +300,15 @@ public class LabUI : MonoBehaviour
     /// об этом прямо говорит, иначе несовпадение выглядело бы как ошибка.</summary>
     void DrawLegend(Rect r)
     {
-        string[] names = { "металлы", "неметаллы", "радиация", "неизученные" };
+        string[] names = { "металлы", "неметаллы", "радиация", "неизученные", "ускоритель", "собранные" };
         Color[] cols =
         {
             new Color(0.82f, 0.20f, 0.22f), new Color(0.20f, 0.45f, 0.88f),
-            new Color(0.20f, 0.72f, 0.32f), new Color(0.92f, 0.80f, 0.18f)
+            new Color(0.20f, 0.72f, 0.32f), new Color(0.92f, 0.80f, 0.18f),
+            new Color(0.35f, 0.80f, 1.00f), new Color(1.00f, 0.55f, 0.10f)
         };
         float x = r.x;
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < names.Length; i++)
         {
             GUI.color = cols[i];
             GUI.DrawTexture(new Rect(x, r.y + 3f, 12f, 12f), Texture2D.whiteTexture);
@@ -303,14 +327,14 @@ public class LabUI : MonoBehaviour
         var h = hover ?? carrying;
         if (h != null)
         {
-            GUI.Label(new Rect(panelX + 14f, 168f, W - 28f, 44f),
+            GUI.Label(new Rect(panelX + 14f, 232f, W - 28f, 44f),
                 h.Z + ". " + h.Name + " (" + h.Sym + ")   масса " + h.Mass.ToString("0.###") +
                 "   связей: " + h.Valence + (h.EN > 0f ? "   ЭО " + h.EN.ToString("0.00") : "") +
                 "\n" + h.ClassName + "  ·  " + h.PaintName, sSmall);
         }
         else
         {
-            DrawLegend(new Rect(panelX + 14f, 168f, W - 28f, 44f));
+            DrawLegend(new Rect(panelX + 14f, 232f, W - 28f, 44f));
         }
 
         foreach (var el in Elements.All)
@@ -326,7 +350,21 @@ public class LabUI : MonoBehaviour
             // Подпись поверх: тёмная на светлой клетке и наоборот.
             float lum = c.r * 0.3f + c.g * 0.59f + c.b * 0.11f;
             sCell.normal.textColor = lum > 0.5f ? Color.black : Color.white;
-            GUI.Label(r, el.Sym, sCell);
+
+            // 🔴 Подписи собранных атомов длинные («Fe-56 3+») и в клетку не лезли — от них
+            // оставались огрызки вроде «-34». Разбиваем на две строки и мельчим шрифт.
+            if (el.Sym.Length > 3)
+            {
+                int cut = el.Sym.IndexOf('-');
+                string top = cut > 0 ? el.Sym.Substring(0, cut) : el.Sym.Substring(0, 2);
+                string bottom = cut > 0 ? el.Sym.Substring(cut + 1) : el.Sym.Substring(2);
+                int keep = sCell.fontSize;
+                sCell.fontSize = Mathf.Max(8, Mathf.RoundToInt(cw * 0.32f));
+                GUI.Label(new Rect(r.x, r.y - 1f, r.width, r.height * 0.55f), top, sCell);
+                GUI.Label(new Rect(r.x, r.y + r.height * 0.42f, r.width, r.height * 0.55f), bottom, sCell);
+                sCell.fontSize = keep;
+            }
+            else GUI.Label(r, el.Sym, sCell);
         }
 
         // Полоса прокрутки — тонкая, справа.
@@ -463,6 +501,7 @@ public class LabUI : MonoBehaviour
         if (lab == null) return;
 
         cardHeight = 0f;
+        if (accelOn || builderOn || quarkOn) return;    // внизу стоит пульт режима, карточке там не место
         Lab.Mol best = null;
         foreach (var m in lab.Mols)
             if (m.Atoms.Count > 1 && (best == null || m.Atoms.Count > best.Atoms.Count)) best = m;
@@ -506,7 +545,7 @@ public class LabUI : MonoBehaviour
         var lab = Lab.I;
         if (lab == null) return;
 
-        if (accelOn) return;              // в ускорителе внизу стоит его пульт
+        if (accelOn || builderOn || quarkOn) return;   // внизу стоит пульт того режима, что включён
         float x = PanelRightPx + 20f;
         if (Screen.width - x < 200f) return;
         float y = Screen.height - cardHeight - 20f - 34f;
@@ -654,6 +693,8 @@ public class LabUI : MonoBehaviour
         if (acc == null || Lab.I == null) return;
         accelOn = !accelOn;
         acc.Active = accelOn;
+        if (accelOn && builderOn) { builderOn = false; if (AtomBuilder.I != null) AtomBuilder.I.Active = false; }
+        if (accelOn && quarkOn) { quarkOn = false; if (QuarkLab.I != null) QuarkLab.I.Active = false; }
         pendingSlot = -1;
         if (accelOn)
         {
@@ -704,6 +745,15 @@ public class LabUI : MonoBehaviour
         if (pendingSlot >= 0)
             GUI.Label(new Rect(r.x + 12f, r.y + 132f, r.width - 24f, 20f),
                 "Теперь выбери элемент в таблице слева — он встанет в гнездо.", sNote);
+        else if (Accelerator.Log.Count > 0)
+        {
+            // Журнал добытого: раньше результат жил только в гнезде и терялся при следующей
+            // склейке. Теперь видно всё, что вышло за сеанс.
+            int n = Mathf.Min(3, Accelerator.Log.Count);
+            var sb = new System.Text.StringBuilder("добыто: ");
+            for (int i = 0; i < n; i++) sb.Append(Accelerator.Log[Accelerator.Log.Count - 1 - i]).Append(i < n - 1 ? ";  " : "");
+            GUI.Label(new Rect(r.x + 12f, r.y + 132f, r.width - 24f, 20f), sb.ToString(), sNote);
+        }
     }
 
     void DrawSlotButton(Rect r, int slot, Elements.El el, string title)
@@ -718,6 +768,158 @@ public class LabUI : MonoBehaviour
         GUI.Label(new Rect(r.x + 8f, r.y + 18f, r.width - 12f, 20f), text, sSmall);
 
         if (slot >= 0 && GUI.Button(r, "", GUIStyle.none)) pendingSlot = (pendingSlot == slot) ? -1 : slot;
+    }
+
+
+    // ==================== сборка атома ====================
+
+    bool builderOn;
+
+    void ToggleBuilder()
+    {
+        var b = AtomBuilder.I;
+        if (b == null || Lab.I == null) return;
+        builderOn = !builderOn;
+        b.Active = builderOn;
+        if (builderOn)
+        {
+            if (accelOn) { accelOn = false; if (Accelerator.I != null) Accelerator.I.Active = false; }
+            if (quarkOn) { quarkOn = false; if (QuarkLab.I != null) QuarkLab.I.Active = false; }
+            Lab.I.LookAt(AtomBuilder.Rig, 9f);
+            Lab.I.Say("Сборка атома. Протоны решают, ЧТО это за элемент; нейтроны — какой изотоп; электроны — заряд.",
+                new Color(1f, 0.8f, 0.5f));
+        }
+        else
+        {
+            Lab.I.LookAt(Lab.ZoneCenter, 14f);
+            Lab.I.Say("Назад в лабораторию.", new Color(0.8f, 0.9f, 1f));
+        }
+    }
+
+    /// <summary>Пульт сборки: три счётчика и приговор о том, что вышло.</summary>
+    void DrawBuilder()
+    {
+        if (!builderOn) return;
+        var b = AtomBuilder.I;
+        if (b == null) return;
+
+        float x = PanelRightPx + 20f;
+        float w = Mathf.Min(600f, Screen.width - x - 20f);
+        if (w < 280f) return;
+        var r = new Rect(x, Screen.height - 232f, w, 212f);
+
+        GUI.color = new Color(0f, 0f, 0f, 0.62f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(1f, 0.6f, 0.2f, 0.9f);
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), "СБОРКА АТОМА", sTitle);
+
+        float rowY = r.y + 32f;
+        Counter(new Rect(r.x + 12f, rowY, r.width - 24f, 26f), "Протоны", b.Protons, new Color(0.9f, 0.3f, 0.25f), 0);
+        Counter(new Rect(r.x + 12f, rowY + 30f, r.width - 24f, 26f), "Нейтроны", b.Neutrons, new Color(0.7f, 0.7f, 0.75f), 1);
+        Counter(new Rect(r.x + 12f, rowY + 60f, r.width - 24f, 26f), "Электроны", b.Electrons, new Color(0.35f, 0.8f, 1f), 2);
+
+        // 🔴 21.09, владелец: «текст наехал». Приговор длинный и переносится, поэтому ему
+        // отведена своя полоса в 56 пикселей, а кнопки стоят ПОД ней, а не поверх.
+        GUI.Label(new Rect(r.x + 12f, rowY + 92f, r.width - 24f, 56f), b.Verdict, sSmall);
+
+        GUI.color = new Color(1f, 0.8f, 0.45f);
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 176f, 210f, 28f), "Записать в таблицу", sTab)) b.SaveToTable();
+        GUI.color = Color.white;
+        if (GUI.Button(new Rect(r.x + 230f, r.y + 176f, 210f, 28f), "Записать и в зону", sTab)) b.SendToZone();
+    }
+
+    void Counter(Rect r, string title, int value, Color c, int kind)
+    {
+        GUI.color = c;
+        GUI.DrawTexture(new Rect(r.x, r.y + 6f, 14f, 14f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(r.x + 20f, r.y + 3f, 110f, 22f), title, sSmall);
+        GUI.Label(new Rect(r.x + 130f, r.y + 3f, 60f, 22f), value.ToString(), sTitle);
+
+        var b = AtomBuilder.I;
+        float bx = r.x + 190f;
+        if (GUI.Button(new Rect(bx, r.y, 34f, 24f), "-", sTab)) Change(kind, -1);
+        if (GUI.Button(new Rect(bx + 38f, r.y, 34f, 24f), "+", sTab)) Change(kind, +1);
+        if (GUI.Button(new Rect(bx + 80f, r.y, 44f, 24f), "-10", sTab)) Change(kind, -10);
+        if (GUI.Button(new Rect(bx + 128f, r.y, 44f, 24f), "+10", sTab)) Change(kind, +10);
+    }
+
+    void Change(int kind, int d)
+    {
+        var b = AtomBuilder.I;
+        if (b == null) return;
+        if (kind == 0) b.Add(d, 0, 0);
+        else if (kind == 1) b.Add(0, d, 0);
+        else b.Add(0, 0, d);
+    }
+
+
+    // ==================== сборка из кварков ====================
+
+    bool quarkOn;
+
+    void ToggleQuarks()
+    {
+        var q = QuarkLab.I;
+        if (q == null || Lab.I == null) return;
+        quarkOn = !quarkOn;
+        q.Active = quarkOn;
+        if (quarkOn)
+        {
+            if (accelOn) { accelOn = false; if (Accelerator.I != null) Accelerator.I.Active = false; }
+            if (builderOn) { builderOn = false; if (AtomBuilder.I != null) AtomBuilder.I.Active = false; }
+            Lab.I.LookAt(QuarkLab.Rig, 8f);
+            Lab.I.Say("Кварки. Протон — это uud, нейтрон — udd. Собранное уходит наверх, в сборку атома.",
+                new Color(0.85f, 0.7f, 1f));
+        }
+        else
+        {
+            Lab.I.LookAt(Lab.ZoneCenter, 14f);
+            Lab.I.Say("Назад в лабораторию.", new Color(0.8f, 0.9f, 1f));
+        }
+    }
+
+    /// <summary>Пульт кварков: два вида кварков, тройка и приговор.</summary>
+    void DrawQuarks()
+    {
+        if (!quarkOn) return;
+        var q = QuarkLab.I;
+        if (q == null) return;
+
+        float x = PanelRightPx + 20f;
+        float w = Mathf.Min(600f, Screen.width - x - 20f);
+        if (w < 280f) return;
+        var r = new Rect(x, Screen.height - 216f, w, 196f);
+
+        GUI.color = new Color(0f, 0f, 0f, 0.62f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(0.8f, 0.5f, 1f, 0.9f);
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), "СБОРКА ИЗ КВАРКОВ", sTitle);
+        GUI.Label(new Rect(r.x + 12f, r.y + 28f, r.width - 24f, 20f),
+            "Верхний кварк даёт +2/3, нижний −1/3. Три кварка — барион.", sSmall);
+
+        GUI.color = new Color(1f, 0.7f, 0.3f);
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 52f, 150f, 30f), "+ верхний (u)", sTab)) q.Add(true);
+        GUI.color = new Color(0.5f, 0.7f, 1f);
+        if (GUI.Button(new Rect(r.x + 170f, r.y + 52f, 150f, 30f), "+ нижний (d)", sTab)) q.Add(false);
+        GUI.color = Color.white;
+        if (GUI.Button(new Rect(r.x + 328f, r.y + 52f, 110f, 30f), "очистить", sTab)) q.Clear();
+
+        GUI.Label(new Rect(r.x + 12f, r.y + 88f, r.width - 24f, 22f),
+            "В тройке: " + q.Composition + "    заряд: " + (q.Charge >= 0f ? "+" : "") + q.Charge.ToString("0.##"), sTitle);
+        GUI.Label(new Rect(r.x + 12f, r.y + 110f, r.width - 24f, 42f), q.Verdict, sSmall);
+
+        GUI.color = new Color(0.85f, 0.7f, 1f);
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 158f, 230f, 28f), "Собрать частицу", sTab)) q.Assemble();
+        GUI.color = Color.white;
+        GUI.Label(new Rect(r.x + 252f, r.y + 160f, r.width - 264f, 22f),
+            "собрано: протонов " + q.MadeProtons + ", нейтронов " + q.MadeNeutrons, sSmall);
     }
 
     void DrawCarry(Event e)

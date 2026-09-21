@@ -141,8 +141,19 @@ public class Accelerator : MonoBehaviour
             }
         }
 
+        // 🔴 21.09, владелец: «я потерял элемент из ускорителя». И терял справедливо: добытое
+        // лежало только в центральном гнезде, а следующая склейка его затирала. Известный
+        // элемент при этом не оставлял вообще никакого следа. Теперь добытое СРАЗУ кладётся
+        // атомом в зону сборки и пишется в журнал ускорителя — потерять больше нечего.
+        Atom.Spawn(Result, Lab.ZoneCenter + new Vector3(Random.Range(-1.2f, 1.2f), 0.6f, Random.Range(-1f, 1f)));
+        Log.Add(Result.Sym + "  " + Result.Name + "  (" + Result.Z + ")" + (isNew ? "  — новый" : ""));
+        if (lab != null) lab.Recompute();
+
         SlotA = SlotB = null;
     }
+
+    /// <summary>Журнал ускорителя: что и когда получилось. Держим последние двадцать.</summary>
+    public static readonly List<string> Log = new List<string>();
 
     /// <summary>Отправить добытое в зону сборки — играть им как обычным атомом.</summary>
     public void TakeResult()

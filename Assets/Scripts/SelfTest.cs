@@ -31,6 +31,19 @@ public class SelfTest : MonoBehaviour
         }
     }
 
+    /// <summary>🔴 Чистка идёт в Awake, а НЕ в Start. Стенды читают свои файлы в Start, и
+    /// удаление из корутины успевало опоздать: прерванный прогон оставлял записи, следующий
+    /// находил их уже в таблице и объявлял сломанным синтез. Awake у всех выполняется раньше
+    /// любого Start, поэтому здесь опоздать нельзя.</summary>
+    void Awake()
+    {
+        foreach (var f in new[] { "synthetic.txt", "assembled.txt", "zone.txt" })
+        {
+            try { System.IO.File.Delete(System.IO.Path.Combine(Application.persistentDataPath, f)); }
+            catch { }
+        }
+    }
+
     IEnumerator Start()
     {
         yield return new WaitForSeconds(0.5f);
@@ -144,7 +157,30 @@ public class SelfTest : MonoBehaviour
             acc.Result = null;
         }
 
-        Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone + " accel=" + accOk + " synth=" + synthOk);
-        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0 && accOk && synthOk) ? 0 : 2);
+        // Седьмой случай: сборка атома. Восемь протонов — всегда кислород, и никакие нейтроны
+        // этого не меняют; десять нейтронов делают из него кислород-18. Железо без трёх
+        // электронов обязано стать ионом 3+ и получить ровно три связи.
+        var bld = AtomBuilder.I;
+        bool isoOk = false, ionOk = false;
+        if (bld != null)
+        {
+            bld.Protons = 8; bld.Neutrons = 10; bld.Electrons = 8;
+            var iso = bld.SaveToTable();
+            isoOk = iso != null && iso.Assembled && iso.Sym == "O-18" && iso.MassNumber == 18 && iso.Charge == 0;
+            Debug.Log("SELFTEST build O+10n: " + (iso != null ? iso.Sym + " A=" + iso.MassNumber + " заряд=" + iso.Charge : "нет") +
+                      (isoOk ? " OK" : " MISMATCH"));
+
+            bld.Protons = 26; bld.Neutrons = 30; bld.Electrons = 23;
+            var ion = bld.SaveToTable();
+            ionOk = ion != null && ion.Assembled && ion.Charge == 3 && ion.MassNumber == 56 && ion.Valence == 3;
+            Debug.Log("SELFTEST build Fe 3+: " + (ion != null ? ion.Sym + " A=" + ion.MassNumber + " заряд=" + ion.Charge + " связей=" + ion.Valence : "нет") +
+                      (ionOk ? " OK" : " MISMATCH"));
+
+            // Проверка не оставляет своих записей в настоящей таблице владельца.
+            try { System.IO.File.Delete(System.IO.Path.Combine(Application.persistentDataPath, "assembled.txt")); } catch { }
+        }
+
+        Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone + " accel=" + accOk + " synth=" + synthOk + " iso=" + isoOk + " ion=" + ionOk);
+        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0 && accOk && synthOk && isoOk && ionOk) ? 0 : 2);
     }
 }

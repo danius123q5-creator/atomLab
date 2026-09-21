@@ -68,7 +68,9 @@ public static class Bootstrap
         lab.Cam = cam;
         labGo.AddComponent<LabUI>();
         labGo.AddComponent<Traits>();
-        labGo.AddComponent<Accelerator>();   // стенд синтеза: два гнезда и результат      // характеры элементов: магнетизм, распад, жадность галогенов
+        labGo.AddComponent<Accelerator>();
+        labGo.AddComponent<AtomBuilder>();
+        labGo.AddComponent<QuarkLab>();       // этаж ниже: кварки    // стенд сборки: протоны, нейтроны, электроны   // стенд синтеза: два гнезда и результат      // характеры элементов: магнетизм, распад, жадность галогенов
 
         if (SelfTest.Requested) labGo.AddComponent<SelfTest>();
         else lab.LoadZone();               // в проверке начинаем с чистой зоны, иначе она увидит чужое

@@ -50,6 +50,40 @@ public static class BuildScript
         if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
     }
 
+
+    /// <summary>Сборка под Android:
+    /// Unity.exe -batchmode -quit -projectPath "..." -executeMethod BuildScript.BuildAndroid
+    ///
+    /// Подписывается отладочным ключом Unity — такой apk ставится сбоку (нужно разрешить
+    /// «установку из неизвестных источников»), но в Google Play его не примут: туда нужен
+    /// свой ключ, а ключи заводит владелец, не я.</summary>
+    public static void BuildAndroid()
+    {
+        var scenes = EnsureScene();
+        PlayerSettings.productName = "AtomLab";
+        PlayerSettings.companyName = "Danich";
+        PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.Android, "com.danich.atomlab");
+        PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel25;   // 24 больше не поддерживается
+        PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+        PlayerSettings.SetScriptingBackend(UnityEditor.Build.NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+        EditorUserBuildSettings.buildAppBundle = false;      // нужен apk, а не aab: aab не поставить напрямую
+
+        var opts = new BuildPlayerOptions
+        {
+            scenes = scenes,
+            locationPathName = "Build/Android/AtomLab.apk",
+            target = BuildTarget.Android,
+            targetGroup = BuildTargetGroup.Android,
+            options = BuildOptions.None,
+        };
+
+        var report = BuildPipeline.BuildPlayer(opts);
+        var s = report.summary;
+        Debug.Log("ANDROID BUILD RESULT: " + s.result + "  size=" + s.totalSize + " bytes  errors=" + s.totalErrors);
+        if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
+    }
+
     /// <summary>Только проверка компиляции: ничего не собирает, но падает на ошибке в коде.
     /// Быстрее полной сборки, поэтому правки гоняем через неё.</summary>
     public static void CompileOnly()
