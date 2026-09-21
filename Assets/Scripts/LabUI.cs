@@ -39,6 +39,7 @@ public class LabUI : MonoBehaviour
         get
         {
             if (carrying != null || drag == DragKind.Panel) return true;
+            if (updRect.width > 0f && updRect.Contains(MouseGui)) return true;   // плашка обновления
             if (menuAtom != null &&
                 MenuRect.Contains(MouseGui)) return true;
             if ((replaceTarget != null || pendingSlot >= 0) &&
@@ -211,6 +212,7 @@ public class LabUI : MonoBehaviour
         DrawPicker();
         DrawMenu();
         DrawCarry(e);
+        DrawUpdate();
         DrawHoverTip();
         DrawCellTip();
     }
@@ -748,6 +750,40 @@ public class LabUI : MonoBehaviour
         }
     }
 
+    Rect updRect;
+
+    /// <summary>Плашка «вышла новая версия» под счётом (21.09, владелец: «пусть игра говорит
+    /// об обновлении и качает сама»).</summary>
+    void DrawUpdate()
+    {
+        var u = Updater.I;
+        updRect = new Rect();
+        if (u == null || u.Latest == null || u.Dismissed) return;
+        var r = new Rect(SW - 360f, 76f, 350f, u.Status.Length > 0 ? 104f : 74f);
+        updRect = r;
+        GUI.color = new Color(0.05f, 0.2f, 0.1f, 0.92f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(0.4f, 1f, 0.55f);
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(r.x + 10f, r.y + 6f, r.width - 20f, 22f),
+            Lang.T("Вышла версия ", "Version ") + u.Latest + Lang.T(" (у тебя ", " is out (you have ") + Updater.Version + ")", sTitle);
+        if (u.Progress >= 0f && u.Progress < 1f)
+        {
+            GUI.color = new Color(1f, 1f, 1f, 0.2f);
+            GUI.DrawTexture(new Rect(r.x + 10f, r.y + 40f, r.width - 20f, 16f), Texture2D.whiteTexture);
+            GUI.color = new Color(0.4f, 1f, 0.55f);
+            GUI.DrawTexture(new Rect(r.x + 10f, r.y + 40f, (r.width - 20f) * u.Progress, 16f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+        else
+        {
+            if (GUI.Button(new Rect(r.x + 10f, r.y + 38f, 160f, 26f), Lang.T("Скачать", "Download"), sTab)) u.Download();
+            if (GUI.Button(new Rect(r.x + 180f, r.y + 38f, 100f, 26f), Lang.T("Позже", "Later"), sTab)) u.Dismissed = true;
+        }
+        if (u.Status.Length > 0) GUI.Label(new Rect(r.x + 10f, r.y + 66f, r.width - 20f, 36f), u.Status, sSmall);
+    }
+
     void DrawHud()
     {
         var lab = Lab.I;
@@ -790,13 +826,22 @@ public class LabUI : MonoBehaviour
         if (best == null) return;
 
         float x = PanelRightGui + 20f;
-        float w = Mathf.Min(430f, SW - x - 20f);
+        float w = Mathf.Min(620f, SW - x - 20f);   // 21.09, владелец: «расширь окно формулы» (было 430)
         if (w < 160f) return;
         bool hasUse = best.Info != null && !string.IsNullOrEmpty(best.Info.Use);
         // 21.09, владелец: «добавь под формулой размер молекулы. и напиши что не держится».
         string unstable = MolFacts.Instability(best);
-        float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f + 18f   // +16 расшифровка, +18 размер
-                  + (unstable != null ? 44f : 0f);
+        // Расшифровка длинной формулы не влезала в строку и обрезалась («… никель · 7»):
+        // даём ей переноситься и растим карточку на лишние строки.
+        string decode = Lang.Decode(best.Formula);
+        float decW = Mathf.Min(620f, SW - (PanelRightGui + 20f) - 20f) - 24f;
+        string advice = MolFacts.Advice(best);
+        float advH = advice == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(advice), Mathf.Max(60f, decW)), 18f, 70f) + 4f;
+        float unsH = unstable == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(unstable), Mathf.Max(60f, decW)), 18f, 70f) + 4f;
+        float decH = Mathf.Clamp(sSmall.CalcHeight(new GUIContent(decode), Mathf.Max(60f, decW)), 18f, 54f);
+        float dy = decH - 18f;                                                       // сколько добавили переносы
+        float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f + 18f + dy   // +16 расшифровка, +18 размер
+                  + unsH + advH;
         cardHeight = h;
         var r = new Rect(x, SH - h - 20f, w, h);
 
@@ -811,11 +856,11 @@ public class LabUI : MonoBehaviour
         GUI.Label(new Rect(r.x + 14f, r.y + 6f, r.width - 24f, 34f), Lang.Sub(best.Formula, 18), sBig);
         var keepDec = sSmall.normal.textColor;
         sSmall.normal.textColor = new Color(0.8f, 0.85f, 0.95f);
-        GUI.Label(new Rect(r.x + 14f, r.y + 36f, r.width - 24f, 18f), Lang.Decode(best.Formula), sSmall);
+        GUI.Label(new Rect(r.x + 14f, r.y + 36f, r.width - 24f, decH), decode, sSmall);
         sSmall.normal.textColor = new Color(0.6f, 0.9f, 1f);
-        GUI.Label(new Rect(r.x + 14f, r.y + 54f, r.width - 24f, 18f), MolFacts.SizeLine(best), sSmall);
+        GUI.Label(new Rect(r.x + 14f, r.y + 54f + dy, r.width - 24f, 18f), MolFacts.SizeLine(best), sSmall);
         sSmall.normal.textColor = keepDec;
-        float oy = 18f;   // всё ниже сдвинуто на строку размера
+        float oy = 18f + dy;   // всё ниже сдвинуто на строку размера и переносы расшифровки
 
         if (best.Info != null)
         {
@@ -856,8 +901,15 @@ public class LabUI : MonoBehaviour
             {
                 var keepU = sSmall.normal.textColor;
                 sSmall.normal.textColor = new Color(1f, 0.45f, 0.4f);
-                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy, r.width - 24f, 44f), unstable, sSmall);
+                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy, r.width - 24f, unsH), unstable, sSmall);
                 sSmall.normal.textColor = keepU;
+            }
+            if (advice != null)
+            {
+                var keepA = sSmall.normal.textColor;
+                sSmall.normal.textColor = new Color(1f, 0.85f, 0.45f);
+                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy + unsH, r.width - 24f, advH), advice, sSmall);
+                sSmall.normal.textColor = keepA;
             }
         }
     }

@@ -116,4 +116,68 @@ public static class MolFacts
         return Lang.T("Так не держится: ", "This would not hold together: ") + string.Join("; ", why.ToArray()) + ". " +
                Lang.T("В жизни распалось бы на: ", "In reality it would fall apart into: ") + string.Join(", ", outList.ToArray()) + ".";
     }
+
+    /// <summary>21.09, владелец: «пусть игра пишет, что нужно добавить для стабильности».
+    /// Три подсказки, от простой к полезной:
+    ///   • свободные связи — чем их закрыть (радикал с незанятыми местами в жизни не живёт);
+    ///   • несколько металлов — какие убрать;
+    ///   • самое похожее НАСТОЯЩЕЕ вещество из справочника и что добавить/убрать до него.
+    /// Для веществ из справочника молчит — они и так настоящие.</summary>
+    public static string Advice(Lab.Mol m)
+    {
+        if (m == null || m.Info != null || m.Atoms.Count < 2) return null;
+        var have = new Dictionary<string, int>();
+        var metals = new List<string>();
+        foreach (var a in m.Atoms)
+        {
+            int c0; have.TryGetValue(a.El.Sym, out c0); have[a.El.Sym] = c0 + 1;
+            if (IsMetal(a.El) && !metals.Contains(a.El.Sym)) metals.Add(a.El.Sym);
+        }
+        var tips = new List<string>();
+
+        if (m.FreeLeft > 0)
+            tips.Add(Lang.T("закрой свободные связи: добавь ", "close the free bonds: add ") + m.FreeLeft +
+                     Lang.T(" водород(а) — атом с незанятыми местами (радикал) в жизни сразу во что-то вцепится",
+                            " hydrogen(s) — an atom with empty slots (a radical) grabs something at once in reality"));
+
+        if (metals.Count >= 2)
+        {
+            // оставляем металл, которого больше всего
+            string keep = metals[0];
+            foreach (var mm in metals) if (have[mm] > have[keep]) keep = mm;
+            var drop = new List<string>();
+            foreach (var mm in metals) if (mm != keep) drop.Add(mm);
+            tips.Add(Lang.T("оставь один металл — ", "keep one metal — ") + keep + Lang.T(", убери ", ", remove ") + string.Join(", ", drop.ToArray()));
+        }
+
+        // Ближайшее настоящее вещество: меньше всего атомов добавить и убрать.
+        Molecules.Info best = null; int bestCost = int.MaxValue; Dictionary<string, int> bestComp = null;
+        foreach (var info in Molecules.DB.Values)
+        {
+            var comp = Molecules.ParseFormula(info.Formula);
+            bool shares = false;
+            foreach (var k in comp.Keys) if (have.ContainsKey(k)) { shares = true; break; }
+            if (!shares) continue;
+            int cost = 0;
+            foreach (var kv in comp) { int h0; have.TryGetValue(kv.Key, out h0); cost += Mathf.Abs(kv.Value - h0); }
+            foreach (var kv in have) if (!comp.ContainsKey(kv.Key)) cost += kv.Value;
+            // Ничья решается в пользу варианта БЕЗ новых элементов: CH3 -> «добавь H» (метан),
+            // а не «добавь Cl» (хлорметан) — проверка поймала именно такую ничью.
+            int newEls = 0; foreach (var k in comp.Keys) if (!have.ContainsKey(k)) newEls++;
+            int score = cost * 4 + newEls;
+            if (score < bestCost) { bestCost = score; best = info; bestComp = comp; }
+        }
+        if (best != null && bestCost > 0 && bestCost / 4 <= Mathf.Max(6, m.Atoms.Count))
+        {
+            var add = new List<string>(); var rem = new List<string>();
+            foreach (var kv in bestComp) { int h0; have.TryGetValue(kv.Key, out h0); if (kv.Value > h0) add.Add((kv.Value - h0) + " " + kv.Key); else if (kv.Value < h0) rem.Add((h0 - kv.Value) + " " + kv.Key); }
+            foreach (var kv in have) if (!bestComp.ContainsKey(kv.Key)) rem.Add(kv.Value + " " + kv.Key);
+            string how = (add.Count > 0 ? Lang.T("добавь ", "add ") + string.Join(", ", add.ToArray()) : "") +
+                         (add.Count > 0 && rem.Count > 0 ? Lang.T(" и ", " and ") : "") +
+                         (rem.Count > 0 ? Lang.T("убери ", "remove ") + string.Join(", ", rem.ToArray()) : "");
+            tips.Add(Lang.T("ближе всего настоящее ", "the nearest real substance is ") + Lang.Name(best) + " (" + best.Formula + "): " + how);
+        }
+        if (tips.Count == 0) return null;
+        return Lang.T("Для стабильности: ", "For stability: ") + string.Join("; ", tips.ToArray()) + ".";
+    }
 }

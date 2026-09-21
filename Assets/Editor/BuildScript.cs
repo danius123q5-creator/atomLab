@@ -32,6 +32,13 @@ public static class BuildScript
     static void NoSplash()
     {
         EnsureGlass();
+        // Номер версии — из одного места (Updater.Version): по нему игра сравнивает себя с
+        // последним релизом. Код версии Android растёт вместе с ним (2.5 -> 205), иначе телефон
+        // откажется ставить новую поверх старой.
+        PlayerSettings.bundleVersion = Updater.Version;
+        var vp = Updater.Version.Split('.');
+        int vmaj = 0, vmin = 0; int.TryParse(vp[0], out vmaj); if (vp.Length > 1) int.TryParse(vp[1], out vmin);
+        PlayerSettings.Android.bundleVersionCode = Mathf.Max(PlayerSettings.Android.bundleVersionCode, vmaj * 100 + vmin);
         PlayerSettings.SplashScreen.show = false;
         PlayerSettings.SplashScreen.showUnityLogo = false;
     }

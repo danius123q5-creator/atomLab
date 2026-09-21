@@ -159,6 +159,8 @@ public class SelfTest : MonoBehaviour
         }
         lab.ClearZone();
         Debug.Log("SELFTEST popular bad=" + popBad + " of " + Presets.Grid.Length);
+        bool verOk = Updater.Newer("2.6", "2.5") && Updater.Newer("2.10", "2.9") && !Updater.Newer("2.5", "2.5") && !Updater.Newer("2.4", "2.5") && Updater.Newer("v3.0", "2.9");
+        Debug.Log("SELFTEST updater versions: " + (verOk ? "OK" : "MISMATCH") + " (эта сборка " + Updater.Version + ", Application.version " + Application.version + ")");
 
         // 21.09: «убрать связи в меню не работает» — связь рвалась и тут же склеивалась снова.
         lab.ClearZone(); yield return new WaitForSeconds(0.15f);
@@ -200,6 +202,16 @@ public class SelfTest : MonoBehaviour
         string mUns = null; foreach (var mm in lab.Mols) if (mm.Atoms.Count >= 4) mUns = MolFacts.Instability(mm);
         bool factsOk = wSize.Contains("0,") && wUns == null && mUns != null;
         Debug.Log("SELFTEST facts: вода «" + wSize + "» | металлы: " + (mUns ?? "НЕТ предупреждения") + (factsOk ? " OK" : " MISMATCH"));
+
+        // 21.09: «что добавить для стабильности». CH3 — радикал: совет обязан назвать водород и метан.
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        var adC = Atom.Spawn(Elements.BySymbol("C"), c);
+        for (int q = 0; q < 3; q++) lab.BondByHand(adC, Atom.Spawn(Elements.BySymbol("H"), c + Random.onUnitSphere * 2.5f));
+        yield return new WaitForSeconds(0.3f); lab.Recompute();
+        string adv = null; foreach (var mm in lab.Mols) if (mm.Atoms.Count == 4) adv = MolFacts.Advice(mm);
+        bool advOk = adv != null && adv.Contains("CH4") && (adv.Contains("водород") || adv.Contains("hydrogen"));
+        Debug.Log("SELFTEST advice CH3: " + (adv ?? "нет совета") + (advOk ? " OK" : " MISMATCH"));
+        lab.ClearZone();
         lab.ClearZone();
         lab.ClearZone();
         lab.ClearZone();
