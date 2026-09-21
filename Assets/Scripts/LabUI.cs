@@ -19,7 +19,6 @@ public class LabUI : MonoBehaviour
     float W;                    // ширина панели
     float panelX;               // смещение панели: -W закрыта, 0 открыта
     bool open = true;
-    int tab = 0;                // 0 таблица, 1 открытия, 2 задания, 3 как играть
     float scroll, scrollMax;
 
     enum DragKind { None, Panel, Element, Scroll }
@@ -194,19 +193,22 @@ public class LabUI : MonoBehaviour
         GUI.Label(new Rect(panelX + 14f, 32f, W - 28f, 36f),
             "Тяни элемент из таблицы вправо — в зону. Панель двигается свайпом, Esc — спрятать.", sSmall);
 
-        float bw = (W - 40f) / 4f;
-        string[] tabs = { "Таблица", "Открытия", "Задания", "Как играть" };
-        for (int i = 0; i < 4; i++)
+        // 🔴 21.09, владелец: вместо вкладок «Открытия / Задания / Как играть» — один тумблер.
+        // Журнал и задания никуда не делись, они считаются как раньше; счётчик открытий виден
+        // в правом верхнем углу. Просто перестали занимать половину панели.
+        GUI.color = Lab.GodMode ? new Color(1f, 0.85f, 0.35f) : Color.white;
+        if (GUI.Button(new Rect(panelX + 14f, 74f, W - 28f, 28f),
+            (Lab.GodMode ? "РЕЖИМ БОГА: ВКЛ" : "Режим бога: выкл") + "  —  все атомы могут соединиться", sTab))
         {
-            GUI.color = (tab == i) ? new Color(0.5f, 0.8f, 1f) : Color.white;
-            if (GUI.Button(new Rect(panelX + 14f + i * (bw + 4f), 74f, bw, 26f), tabs[i], sTab)) tab = i;
+            Lab.GodMode = !Lab.GodMode;
+            Lab.I.Say(Lab.GodMode
+                ? "Режим бога: валентность больше не считается, склеивается всё со всем — даже гелий."
+                : "Обычный режим: работают валентность и правило благородных газов.",
+                Lab.GodMode ? new Color(1f, 0.85f, 0.4f) : new Color(0.8f, 0.9f, 1f));
         }
         GUI.color = Color.white;
 
-        if (tab == 0) DrawTable(cw, ch);
-        else if (tab == 1) DrawDiscoveries();
-        else if (tab == 2) DrawQuests();
-        else DrawHelp();
+        DrawTable(cw, ch);
     }
 
     void DrawTable(float cw, float ch)
@@ -254,75 +256,8 @@ public class LabUI : MonoBehaviour
         }
     }
 
-    void DrawDiscoveries()
-    {
-        var lab = Lab.I;
-        GUI.Label(new Rect(panelX + 14f, 108f, W - 28f, 24f),
-            "Открыто: " + lab.Discovered.Count + " из " + Molecules.Total + "   ·   очки: " + lab.Score, sTitle);
 
-        float y = tableTop - 6f;
-        float viewH = Screen.height - y - 40f;
-        var list = new List<string>(lab.Discovered);
-        list.Sort(System.StringComparer.Ordinal);
-        scrollMax = Mathf.Max(0f, list.Count * 34f - viewH);
-        foreach (var f in list)
-        {
-            var info = Molecules.Lookup(f);
-            float yy = y - scroll;
-            if (yy > tableTop - 40f && yy < Screen.height)
-            {
-                GUI.Label(new Rect(panelX + 14f, yy, W - 28f, 18f), f + " — " + (info != null ? info.Name : "?"), sSmall);
-                if (info != null) GUI.Label(new Rect(panelX + 24f, yy + 15f, W - 40f, 18f), info.Note, sNote);
-            }
-            y += 34f;
-        }
-        if (GUI.Button(new Rect(panelX + 14f, Screen.height - 34f, 160f, 26f), "Очистить журнал", sTab)) lab.ResetProgress();
-    }
 
-    void DrawQuests()
-    {
-        var lab = Lab.I;
-        int done = 0;
-        foreach (var q in Quests.All) if (q.Done) done++;
-        GUI.Label(new Rect(panelX + 14f, 108f, W - 28f, 24f), "Задания: " + done + " из " + Quests.All.Length, sTitle);
-
-        float y = tableTop - 6f;
-        foreach (var q in Quests.All)
-        {
-            GUI.color = q.Done ? new Color(0.6f, 1f, 0.6f) : Color.white;
-            GUI.Label(new Rect(panelX + 14f, y, W - 28f, 20f),
-                (q.Done ? "✔ " : "•  ") + q.Title + "   (" + q.Formula + ")   +" + q.Reward, sSmall);
-            GUI.color = Color.white;
-            y += 24f;
-        }
-        scrollMax = 0f;
-    }
-
-    void DrawHelp()
-    {
-        GUI.Label(new Rect(panelX + 14f, 108f, W - 28f, Screen.height - 140f),
-            "КАК ИГРАТЬ\n\n" +
-            "• Тяни элемент из таблицы вправо и отпусти над зоной — появится атом.\n" +
-            "• Короткий тык по клетке тоже кидает атом в середину зоны.\n" +
-            "• Панель: тяни за край или за язычок. Esc — спрятать и показать.\n" +
-            "• Атом тащится левой кнопкой. Поднеси два атома вплотную — склеятся сами.\n" +
-            "• Сожми уже склеенную пару сильнее — связь станет двойной, потом тройной.\n" +
-            "• Правая кнопка — поворот камеры, колесо — приближение, WASD — сдвиг.\n" +
-            "• Shift + правая кнопка по атому — убрать его. Delete — очистить всю зону.\n\n" +
-            "ПРАВИЛА СКЛЕЙКИ\n\n" +
-            "У каждого элемента свой запас связей (валентность): у водорода одна, у кислорода\n" +
-            "две, у углерода четыре. Связь тратит по одной у обоих. Когда запас кончился,\n" +
-            "атом больше никого не берёт — и мягко отталкивает лишних.\n\n" +
-            "Благородные газы (гелий, неон, аргон...) не соединяются ни с кем: у них внешний\n" +
-            "слой уже полон. Это не ограничение игры, это их настоящее свойство.\n\n" +
-            "Цвет связи: серая — ковалентная (электроны общие), жёлтая — ионная (электрон\n" +
-            "отобран более жадным атомом; считаем по разнице электроотрицательностей от 1.7).\n\n" +
-            "ЧЕСТНО О ПРОСТОТЕ\n\n" +
-            "Валентность здесь одна на элемент, хотя у железа их две, а у серы три. И вещество\n" +
-            "определяется по составу, а не по строению — поэтому этанол и диметиловый эфир для\n" +
-            "игры одно и то же. Это конструктор, а не химический пакет.", sSmall);
-        scrollMax = 0f;
-    }
 
     // ==================== мир: подписи над атомами и молекулами ====================
 

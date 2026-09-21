@@ -13,11 +13,13 @@ public class Atom : MonoBehaviour
 
     public static readonly List<Atom> All = new List<Atom>();
 
-    /// <summary>Сколько связей ещё можно повесить. Благородные газы — ноль всегда.</summary>
+    /// <summary>Сколько связей ещё можно повесить. Благородные газы — ноль всегда,
+    /// кроме режима бога, где запас бесконечный у всех.</summary>
     public int FreeValence
     {
         get
         {
+            if (Lab.GodMode) return 99;
             int used = 0;
             for (int i = 0; i < Bonds.Count; i++) used += Bonds[i].Order;
             return Mathf.Max(0, El.Valence - used);

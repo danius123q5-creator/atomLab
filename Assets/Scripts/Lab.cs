@@ -13,6 +13,11 @@ public class Lab : MonoBehaviour
 {
     public static Lab I;
 
+    /// <summary>🔴 21.09, владелец: тумблер вместо вкладок. В режиме бога валентность не
+    /// считается совсем: склеивается всё со всем, включая благородные газы, которые по
+    /// правилам не соединяются ни с кем. Это нарочная неправда — песочница, а не урок.</summary>
+    public static bool GodMode;
+
     public static readonly Vector3 ZoneCenter = new Vector3(0f, 1.6f, 0f);
     public static readonly Vector3 ZoneHalf = new Vector3(5.0f, 3.0f, 4.0f);
 
@@ -180,7 +185,7 @@ public class Lab : MonoBehaviour
         p.y = Mathf.Clamp(p.y, ZoneCenter.y - ZoneHalf.y, ZoneCenter.y + ZoneHalf.y);
         p.z = Mathf.Clamp(p.z, ZoneCenter.z - ZoneHalf.z, ZoneCenter.z + ZoneHalf.z);
         var a = Atom.Spawn(el, p);
-        if (el.Valence == 0) Say(el.Name + " — благородный газ: ни с кем не соединяется. Так и в жизни.", new Color(0.7f, 0.9f, 1f));
+        if (el.Valence == 0 && !GodMode) Say(el.Name + " — благородный газ: ни с кем не соединяется. Так и в жизни.", new Color(0.7f, 0.9f, 1f));
         Recompute();
         return a;
     }
@@ -210,11 +215,11 @@ public class Lab : MonoBehaviour
         for (int i = 0; i < list.Count; i++)
         {
             var a = list[i];
-            if (a.El.Valence == 0) continue;
+            if (a.El.Valence == 0 && !GodMode) continue;
             for (int j = i + 1; j < list.Count; j++)
             {
                 var b = list[j];
-                if (b.El.Valence == 0) continue;
+                if (b.El.Valence == 0 && !GodMode) continue;
                 float dist = Vector3.Distance(a.transform.position, b.transform.position);
                 float touch = (a.El.Radius + b.El.Radius) * 1.25f;
 
@@ -406,13 +411,4 @@ public class Lab : MonoBehaviour
         }
     }
 
-    /// <summary>Сброс журнала — по кнопке в панели, с подтверждением.</summary>
-    public void ResetProgress()
-    {
-        Discovered.Clear();
-        Score = 0;
-        foreach (var q in Quests.All) q.Done = false;
-        SaveProgress();
-        Say("Журнал открытий очищен.", new Color(1f, 0.8f, 0.8f));
-    }
 }
