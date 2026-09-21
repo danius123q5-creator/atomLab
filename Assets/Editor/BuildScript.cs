@@ -31,8 +31,35 @@ public static class BuildScript
     /// логотип, и сам экран заставки — игра открывается сразу.</summary>
     static void NoSplash()
     {
+        EnsureGlass();
         PlayerSettings.SplashScreen.show = false;
         PlayerSettings.SplashScreen.showUnityLogo = false;
+    }
+
+    /// <summary>Материал стекла для посуды верхнего уровня (21.09). Создаём ФАЙЛОМ в Resources:
+    /// прозрачный вариант стандартного шейдера попадает в сборку, только если его использует
+    /// какой-то материал из проекта. Материал, созданный в коде игры, этого не гарантирует —
+    /// вариант выпадает, и стакан рисуется розовым или сплошным.</summary>
+    static void EnsureGlass()
+    {
+        const string path = "Assets/Resources/Glass.mat";
+        if (File.Exists(path)) return;
+        Directory.CreateDirectory("Assets/Resources");
+        var m = new Material(Shader.Find("Standard"));
+        m.SetFloat("_Mode", 2f);                                   // Fade
+        m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        m.SetInt("_ZWrite", 0);
+        m.DisableKeyword("_ALPHATEST_ON");
+        m.EnableKeyword("_ALPHABLEND_ON");
+        m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        m.renderQueue = 3000;
+        m.SetFloat("_Glossiness", 0.9f);
+        m.color = new Color(0.8f, 0.9f, 1f, 0.25f);
+        AssetDatabase.CreateAsset(m, path);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("GLASS: создан " + path);
     }
 
     public static void BuildWindows()

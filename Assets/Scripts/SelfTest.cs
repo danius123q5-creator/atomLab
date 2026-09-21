@@ -160,6 +160,72 @@ public class SelfTest : MonoBehaviour
         lab.ClearZone();
         Debug.Log("SELFTEST popular bad=" + popBad + " of " + Presets.Grid.Length);
 
+        // 21.09: «убрать связи в меню не работает» — связь рвалась и тут же склеивалась снова.
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Presets.SpawnPopular(new Presets.Pop { Formula = "H2O", Ru = "вода", En = "water" });
+        yield return new WaitForSeconds(0.4f);
+        Atom brkO = null; foreach (var at in Atom.All) if (at.El.Sym == "O") brkO = at;
+        int brkBefore = brkO != null ? brkO.Bonds.Count : -1;
+        if (brkO != null) for (int i = brkO.Bonds.Count - 1; i >= 0; i--) lab.BreakByHand(brkO.Bonds[i]);
+        yield return new WaitForSeconds(1.0f);
+        int brkAfter = brkO != null ? brkO.Bonds.Count : -1;
+        Debug.Log("SELFTEST break by hand: связей было " + brkBefore + ", через секунду " + brkAfter + ((brkBefore == 2 && brkAfter == 0) ? " OK" : " MISMATCH"));
+        lab.ClearZone();
+
+        // 21.09: ВЕРХНИЙ УРОВЕНЬ — вещи на столе. Каждый опыт — одна строка с исходом.
+        var ph = PhysLab.I;
+        if (ph != null)
+        {
+            ph.Active = true;
+            yield return new WaitForSeconds(0.2f);
+            ph.ClearTable();
+            var pwater = ph.PutById("beaker_water"); var pdrop = ph.PutById("phph"); var pna = ph.PutById("na");
+            ph.DropInto(pdrop, pwater); ph.DropInto(pna, pwater);
+            bool naOk = ph.IsAlkaline(pwater) && pwater.Indicator && pwater.Contents.Exists(p => p.Formula == "NaOH");
+            string naLog = string.Join(" | ", ph.Log.ToArray());
+
+            var pacid = ph.PutById("flask_hcl"); var pcu = ph.PutById("cu"); ph.DropInto(pcu, pacid);
+            bool cuOk = pacid.Contents.Exists(p => p.Formula == "Cu") && ph.IsAcidic(pacid) && ph.Log.Count > 0;
+
+            var acid2 = ph.PutById("flask_hcl"); var pzn = ph.PutById("zn"); ph.DropInto(pzn, acid2);
+            bool znOk = !acid2.Contents.Exists(p => p.Formula == "Zn") && acid2.Contents.Exists(p => p.Formula == "ZnCl2");
+
+            var pvin = ph.PutById("flask_vinegar"); var psoda = ph.PutById("soda"); ph.DropInto(psoda, pvin);
+            bool sodaOk = pvin.Contents.Exists(p => p.Formula == "CH3COONa");
+
+            var pbas = ph.PutById("flask_naoh"); var acid3 = ph.PutById("flask_hcl"); ph.DropInto(pbas, acid3);
+            bool neutOk = acid3.Contents.Exists(p => p.Formula == "NaCl") && !ph.IsAcidic(acid3) && !ph.IsAlkaline(acid3);
+
+            ph.ClearTable();
+            var w2 = ph.PutById("beaker_water"); var pcuso = ph.PutById("cuso4"); ph.DropInto(pcuso, w2);
+            var pnail = ph.PutById("fe"); ph.DropInto(pnail, w2);
+            bool nailOk = w2.Contents.Exists(p => p.Formula == "FeSO4") && w2.Contents.Exists(p => p.Formula == "Cu");
+
+            var w3 = ph.PutById("beaker_water"); var psalt = ph.PutById("nacl"); var pchalk = ph.PutById("chalk");
+            ph.DropInto(psalt, w3); ph.DropInto(pchalk, w3);
+            bool dissOk = w3.Contents.Exists(p => p.Formula == "NaCl" && p.Phase == PhysLab.Phase.Dissolved) &&
+                          w3.Contents.Exists(p => p.Formula == "CaCO3" && p.Phase == PhysLab.Phase.Solid);
+
+            var pdish = ph.PutById("dish_empty"); var pcuWater = ph.PutById("cu");
+            var w4 = ph.PutById("beaker_water"); ph.DropInto(w4, pdish); ph.DropInto(pcuWater, pdish);
+            bool pourOk = pdish.HasWater && !w4.HasWater && pdish.Contents.Exists(p => p.Formula == "Cu");
+
+            Debug.Log("SELFTEST phys: натрий+вода(щёлочь,малиновый)=" + naOk + " | медь в кислоте стоит=" + cuOk +
+                      " | цинк в кислоте=" + znOk + " | сода+уксус=" + sodaOk + " | нейтрализация=" + neutOk +
+                      " | гвоздь в купоросе=" + nailOk + " | соль растворилась, мел на дне=" + dissOk + " | переливание=" + pourOk +
+                      ((naOk && cuOk && znOk && sodaOk && neutOk && nailOk && dissOk && pourOk) ? " OK" : " MISMATCH"));
+            Debug.Log("SELFTEST phys натрий: " + naLog);
+            ph.ClearTable();
+            var two = ph.PutById("flask_hcl"); var z1 = ph.PutById("zn"); var m1 = ph.PutById("mg");
+            ph.DropInto(z1, two); ph.DropInto(m1, two);
+            bool twoOk = two.Contents.Exists(p => p.Formula == "ZnCl2") && two.Contents.Exists(p => p.Formula == "MgCl2");
+            var wm = ph.PutById("beaker_water"); var m2 = ph.PutById("mg"); ph.DropInto(m2, wm);
+            Debug.Log("SELFTEST phys две порции кислоты: цинк и магний=" + twoOk + " | магний в воде: " + ph.LastText + (twoOk ? " OK" : " MISMATCH"));
+            yield return new WaitForSeconds(0.5f);
+            ph.ClearTable();
+            ph.Active = false;
+        }
+
         // 21.09, владелец: «при переходе с 3д на 2д атомы не цепляются». Кладём в 3D кислород
         // и два водорода РАЗНОЙ глубины, включаем 2D и сводим их в плоскости — должна выйти
         // вода. Плюс: элемент из таблицы в 2D обязан появиться (в ручной пробе он пропал).

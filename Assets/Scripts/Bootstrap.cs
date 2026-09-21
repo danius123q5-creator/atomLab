@@ -70,6 +70,7 @@ public static class Bootstrap
         labGo.AddComponent<Traits>();
         labGo.AddComponent<Accelerator>();
         labGo.AddComponent<AtomBuilder>();
+        labGo.AddComponent<PhysLab>();        // этаж выше: вещи из вещества (стакан, натрий, колбы)
         labGo.AddComponent<QuarkLab>();       // этаж ниже: кварки    // стенд сборки: протоны, нейтроны, электроны   // стенд синтеза: два гнезда и результат      // характеры элементов: магнетизм, распад, жадность галогенов
 
         if (SelfTest.Requested) labGo.AddComponent<SelfTest>();

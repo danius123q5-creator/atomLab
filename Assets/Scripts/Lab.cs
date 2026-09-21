@@ -248,6 +248,9 @@ public class Lab : MonoBehaviour
         saveTimer -= Time.deltaTime;
         if (saveTimer <= 0f) { saveTimer = 8f; if (zoneDirty) SaveZone(); }
         KeepFlat();
+        // На стенде вещей мышь двигает стаканы, а не атомы: иначе каждый клик по столу
+        // заодно тянул бы рамку выделения в зоне молекул.
+        if (PhysLab.I != null && PhysLab.I.Active) return;
 
         // Второй палец лёг — это жест камеры, а не перетаскивание и не рамка. Первый палец
         // успел схватить атом или начать рамку за кадр-другой до второго: отменяем, рамку —
@@ -288,7 +291,7 @@ public class Lab : MonoBehaviour
             if (t != null && t.Bonds.Count > 0)
             {
                 int n = t.Bonds.Count;
-                for (int i = t.Bonds.Count - 1; i >= 0; i--) t.Bonds[i].Break();
+                for (int i = t.Bonds.Count - 1; i >= 0; i--) BreakByHand(t.Bonds[i]);
                 Say(Lang.T("Оторвано связей: ", "Bonds broken: ") + n + Lang.T(" у ", " on ") + t.El.Sym + Lang.T(". Теперь он свободен.", ". It is free now."), new Color(1f, 0.85f, 0.6f));
                 Recompute();
                 return;
@@ -526,6 +529,36 @@ public class Lab : MonoBehaviour
 
     // ==================== склейка ====================
 
+    // 21.09, владелец: «кнопки убрать связи в контекстном меню не работают». Работали — и
+    // тут же откатывались: после разрыва атомы оставались вплотную, а склейка связывает
+    // ЛЮБЫЕ касающиеся атомы со свободными местами. Связь рвалась и в тот же кадр
+    // завязывалась снова. Теперь разорванная рукой пара держится врозь, пока атомы не
+    // разойдутся дальше дистанции склейки; свести их снова можно — поднеся руками.
+    readonly HashSet<long> heldApart = new HashSet<long>();
+
+    static long PairKey(Atom a, Atom b)
+    {
+        int x = a.GetInstanceID(), y = b.GetInstanceID();
+        if (x > y) { int t = x; x = y; y = t; }
+        return ((long)x << 32) ^ (uint)y;
+    }
+
+    /// <summary>Разорвать связь РУКОЙ: разрыв, лёгкий толчок врозь и запрет на немедленную
+    /// обратную склейку этой пары.</summary>
+    public void BreakByHand(Bond b)
+    {
+        if (b == null) return;
+        var a = b.A; var c = b.B;
+        b.Break();
+        if (a == null || c == null) return;
+        heldApart.Add(PairKey(a, c));
+        Vector3 dir = (a.transform.position - c.transform.position);
+        if (dir.sqrMagnitude < 1e-6f) dir = Random.onUnitSphere;
+        dir.Normalize();
+        a.Body.AddForce(dir * 2.5f, ForceMode.VelocityChange);
+        c.Body.AddForce(-dir * 2.5f, ForceMode.VelocityChange);
+    }
+
     void FixedUpdate()
     {
         var list = Atom.All;
@@ -544,6 +577,13 @@ public class Lab : MonoBehaviour
                 // собираться вообще (поймала проверка: water=False). Тянемся дальше собственных
                 // размеров: связь возникает примерно на двух радиусах.
                 float touch = (a.El.Radius + b.El.Radius) * 1.9f;
+
+                if (heldApart.Count > 0 && heldApart.Contains(PairKey(a, b)))
+                {
+                    // Разорвано рукой: не склеиваем, пока пара не разойдётся.
+                    if (dist > touch * 1.15f) heldApart.Remove(PairKey(a, b));
+                    continue;
+                }
 
                 var existing = a.BondWith(b);
                 if (existing != null)
