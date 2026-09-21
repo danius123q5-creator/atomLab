@@ -170,6 +170,19 @@ public class SelfTest : MonoBehaviour
         yield return new WaitForSeconds(1.0f);
         int brkAfter = brkO != null ? brkO.Bonds.Count : -1;
         Debug.Log("SELFTEST break by hand: связей было " + brkBefore + ", через секунду " + brkAfter + ((brkBefore == 2 && brkAfter == 0) ? " OK" : " MISMATCH"));
+
+        // 21.09: «образовать связь с...» из меню — связь ставится с дальним атомом; занятый отказывает.
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        var lnO = Atom.Spawn(Elements.BySymbol("O"), c + Vector3.left * 3f);
+        var lnH1 = Atom.Spawn(Elements.BySymbol("H"), c + Vector3.right * 3f);
+        var lnH2 = Atom.Spawn(Elements.BySymbol("H"), c + Vector3.up * 2.5f);
+        var lnH3 = Atom.Spawn(Elements.BySymbol("H"), c + Vector3.down * 2.5f);
+        yield return new WaitForSeconds(0.2f);
+        string r1 = lab.BondByHand(lnO, lnH1), r2 = lab.BondByHand(lnO, lnH2), r3 = lab.BondByHand(lnO, lnH3);
+        yield return new WaitForSeconds(0.3f);
+        bool linkOk = r1 == null && r2 == null && r3 != null && lnO.Bonds.Count == 2;
+        Debug.Log("SELFTEST link by menu: O-H " + (r1 ?? "ok") + " | O-H " + (r2 ?? "ok") + " | третий H: " + (r3 ?? "НЕ отказал") + (linkOk ? " OK" : " MISMATCH"));
+        lab.ClearZone();
         lab.ClearZone();
 
         // 21.09: ВЕРХНИЙ УРОВЕНЬ — вещи на столе. Каждый опыт — одна строка с исходом.

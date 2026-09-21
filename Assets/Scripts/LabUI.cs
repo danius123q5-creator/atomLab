@@ -656,7 +656,14 @@ public class LabUI : MonoBehaviour
 
             int used = a.UsedBonds;
             int free = a.FreeValence;
-            int n = used + free;
+            // 21.09, владелец: «3 или 4 коннекта?» у железа. Зелёные точки считались только по
+            // обычной валентности, а связь с кислородом разрешалась по высшей — и точек было
+            // то три, то четыре без объяснения. Теперь места, которые открываются только с
+            // кислородом/фтором/хлором, нарисованы ПУСТЫМИ кружками: видно, что они есть, но не
+            // для всякого соседа.
+            int extra = Mathf.Max(0, a.El.MaxBonds - Mathf.Max(a.El.Valence, used));
+            if (Lab.GodMode) extra = 0;
+            int n = used + free + extra;
             if (n <= 0) continue;
             float dot = Mathf.Clamp(rad * 0.2f, 5f, 14f);
             float ring = rad * 0.8f;
@@ -667,8 +674,19 @@ public class LabUI : MonoBehaviour
                 var r = new Rect(sp.x + dx - dot * 0.5f, y + dy - dot * 0.5f, dot, dot);
                 GUI.color = new Color(0f, 0f, 0f, 0.6f);
                 GUI.DrawTexture(new Rect(r.x - 1f, r.y - 1f, r.width + 2f, r.height + 2f), DotTex);
-                GUI.color = k < used ? new Color(1f, 0.25f, 0.2f) : new Color(0.25f, 1f, 0.35f);
-                GUI.DrawTexture(r, DotTex);
+                if (k < used + free)
+                {
+                    GUI.color = k < used ? new Color(1f, 0.25f, 0.2f) : new Color(0.25f, 1f, 0.35f);
+                    GUI.DrawTexture(r, DotTex);
+                }
+                else
+                {
+                    // пустой кружок: светлый обод, тёмная середина
+                    GUI.color = new Color(0.55f, 1f, 0.65f, 0.9f);
+                    GUI.DrawTexture(r, DotTex);
+                    GUI.color = new Color(0.05f, 0.08f, 0.1f, 1f);
+                    GUI.DrawTexture(new Rect(r.x + r.width * 0.25f, r.y + r.height * 0.25f, r.width * 0.5f, r.height * 0.5f), DotTex);
+                }
             }
             GUI.color = Color.white;
         }
@@ -874,14 +892,38 @@ public class LabUI : MonoBehaviour
         menuPos = new Vector2(screenPos.x / U, SH - screenPos.y / U);   // экран -> интерфейс
     }
 
-    public void CloseMenu() { menuAtom = null; menuBondList = false; }
+    public void CloseMenu() { menuAtom = null; menuBondList = false; menuLinkList = false; }
+
+    bool menuLinkList;
+
+    /// <summary>В какой молекуле атом — чтобы в списке было видно «H (H2O)», а не просто «H».</summary>
+    string MolTag(Atom a)
+    {
+        if (Lab.I == null) return "";
+        foreach (var m in Lab.I.Mols) if (m.Atoms.Count > 1 && m.Atoms.Contains(a)) return "  (" + m.Formula + ")";
+        return "";
+    }
+
+    /// <summary>Кого можно предложить в «образовать связь с...»: до восьми ближайших атомов,
+    /// с которыми этот ещё не связан.</summary>
+    List<Atom> LinkCandidates()
+    {
+        var res = new List<Atom>();
+        if (menuAtom == null) return res;
+        foreach (var a in Atom.All)
+            if (a != null && a != menuAtom && menuAtom.BondWith(a) == null) res.Add(a);
+        var p = menuAtom.transform.position;
+        res.Sort((x, z) => (x.transform.position - p).sqrMagnitude.CompareTo((z.transform.position - p).sqrMagnitude));
+        if (res.Count > 8) res.RemoveRange(8, res.Count - 8);
+        return res;
+    }
 
     Rect MenuRect
     {
         get
         {
             if (menuAtom == null) return new Rect();
-            int rows = 6 + (menuBondList ? menuAtom.Bonds.Count : 0);
+            int rows = 7 + (menuBondList ? menuAtom.Bonds.Count : 0) + (menuLinkList ? LinkCandidates().Count : 0);
             float w = 260f, h = 26f + rows * 24f;
             float x = Mathf.Min(menuPos.x, SW - w - 6f);
             float y = Mathf.Min(menuPos.y, SH - h - 6f);
@@ -910,10 +952,37 @@ public class LabUI : MonoBehaviour
             menuAtom.El.Name + " (" + menuAtom.El.Sym + Lang.T(")   связей ", ")   bonds ") + used + Lang.T(" из ", " of ") + menuAtom.El.MaxBonds, sSmall);
         y += 22f;
 
+        // 21.09, владелец: «добавь "образовать связь с..."». Ближайшие атомы зоны — по
+        // расстоянию. Кто не может связаться с этим атомом, показан серым с причиной.
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f),
+            (menuLinkList ? "- " : "+ ") + Lang.T("Образовать связь с...", "Bond with..."), sTab)) { menuLinkList = !menuLinkList; menuBondList = false; }
+        y += 24f;
+        if (menuLinkList)
+        {
+            var cands = LinkCandidates();
+            if (cands.Count == 0) { GUI.Label(new Rect(r.x + 18f, y, r.width - 24f, 22f), Lang.T("рядом нет свободных атомов", "no free atoms nearby"), sNote); y += 24f; }
+            foreach (var other in cands)
+            {
+                bool can = menuAtom.FreeBondsWith(other) > 0 && other.FreeBondsWith(menuAtom) > 0;
+                GUI.color = can ? Color.white : new Color(1f, 1f, 1f, 0.45f);
+                string label = Lang.T("с ", "with ") + other.El.Sym + MolTag(other) +
+                               (can ? "" : Lang.T("  — занят", "  — full"));
+                if (GUI.Button(new Rect(r.x + 18f, y, r.width - 24f, 22f), label, sTab) && can)
+                {
+                    string why = Lab.I.BondByHand(menuAtom, other);
+                    Lab.I.Say(why ?? (Lang.T("Связь ", "Bond ") + menuAtom.El.Sym + "-" + other.El.Sym + Lang.T(" образована.", " made.")),
+                              why == null ? new Color(0.7f, 1f, 0.75f) : new Color(1f, 0.85f, 0.6f));
+                    menuLinkList = false;
+                }
+                GUI.color = Color.white;
+                y += 24f;
+            }
+        }
+
         if (menuAtom.Bonds.Count > 0)
         {
             if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f),
-                (menuBondList ? "- " : "+ ") + Lang.T("Убрать связь с...", "Remove bond with..."), sTab)) menuBondList = !menuBondList;
+                (menuBondList ? "- " : "+ ") + Lang.T("Убрать связь с...", "Remove bond with..."), sTab)) { menuBondList = !menuBondList; menuLinkList = false; }
             y += 24f;
 
             if (menuBondList)
@@ -1324,6 +1393,8 @@ public class LabUI : MonoBehaviour
         "S", "Cl", "K", "Ca", "Fe", "Cu", "Zn", "Ag", "Au", "Pb", "U"
     };
 
+    Vector2 pickerScroll;
+
     void DrawPicker()
     {
         bool forReplace = replaceTarget != null;
@@ -1333,8 +1404,16 @@ public class LabUI : MonoBehaviour
         float x = PanelRightGui + 6f;
         float w = 250f;
         if (x + w > SW - 10f) return;
-        float h = 92f + Mathf.Ceil(COMMON.Length / 3f) * 30f;
-        var r = new Rect(x, tableTop - 40f, w, h);
+        // 21.09, владелец: «надо полную таблицу». Было восемнадцать ходовых элементов — теперь
+        // все клетки по порядку номеров, листаются колёсиком или пальцем.
+        var all = new List<Elements.El>(Elements.All);
+        const int pc = 6;
+        float cellH = 26f;
+        int prow = (all.Count + pc - 1) / pc;
+        float listH = prow * (cellH + 4f);
+        float top = Mathf.Max(8f, tableTop - 40f);
+        float h = Mathf.Min(92f + listH, SH - top - 10f);
+        var r = new Rect(x, top, w, h);
 
         GUI.color = new Color(0.07f, 0.1f, 0.16f, 0.97f);
         GUI.DrawTexture(r, Texture2D.whiteTexture);
@@ -1346,14 +1425,16 @@ public class LabUI : MonoBehaviour
             ? Lang.T("Заменить ", "Replace ") + replaceTarget.El.Sym + Lang.T(" на:", " with:")
             : Lang.T("В гнездо ", "Into slot ") + (pendingSlot == 0 ? Lang.T("слева", "left") : Lang.T("справа", "right")) + ":";
         GUI.Label(new Rect(r.x + 10f, r.y + 6f, r.width - 20f, 22f), title, sTitle);
-        GUI.Label(new Rect(r.x + 10f, r.y + 28f, r.width - 20f, 20f), Lang.T("ходовые — или любая клетка слева", "common ones — or any cell on the left"), sSmall);
+        GUI.Label(new Rect(r.x + 10f, r.y + 28f, r.width - 20f, 20f), Lang.T("все элементы по номеру — или клетка слева", "all elements by number — or a cell on the left"), sSmall);
 
-        float cw = (r.width - 28f) / 3f;
-        for (int i = 0; i < COMMON.Length; i++)
+        float cw = (r.width - 28f - (pc - 3) * 4f) / pc;
+        var view = new Rect(r.x, r.y + 52f, r.width, r.height - 52f - 36f);
+        pickerScroll = GUI.BeginScrollView(view, pickerScroll, new Rect(0f, 0f, r.width - 18f, listH));
+        for (int i = 0; i < all.Count; i++)
         {
-            var el = Elements.BySymbol(COMMON[i]);
+            var el = all[i];
             if (el == null) continue;
-            var cell = new Rect(r.x + 10f + (i % 3) * (cw + 4f), r.y + 52f + (i / 3) * 30f, cw, 26f);
+            var cell = new Rect(10f + (i % pc) * (cw + 4f), (i / pc) * (cellH + 4f), cw, cellH);
             GUI.color = el.PaintColor;
             GUI.DrawTexture(cell, Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -1362,6 +1443,7 @@ public class LabUI : MonoBehaviour
             GUI.Label(cell, el.Sym, sCell);
             if (GUI.Button(cell, "", GUIStyle.none)) Choose(el);
         }
+        GUI.EndScrollView();
 
         if (GUI.Button(new Rect(r.x + 10f, r.yMax - 32f, r.width - 20f, 24f), Lang.T("отмена", "cancel"), sTab))
         {

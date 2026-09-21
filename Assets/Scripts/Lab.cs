@@ -559,6 +559,28 @@ public class Lab : MonoBehaviour
         c.Body.AddForce(-dir * 2.5f, ForceMode.VelocityChange);
     }
 
+    /// <summary>21.09, владелец: «добавь "образовать связь с..."». Связать два атома из
+    /// меню: второй подтягивается к первому и связь ставится сразу — если у обоих есть место
+    /// для такой пары. Возвращает причину отказа или null.</summary>
+    public string BondByHand(Atom a, Atom b)
+    {
+        if (a == null || b == null || a == b) return Lang.T("Не с чем связывать.", "Nothing to bond with.");
+        if (a.BondWith(b) != null) return Lang.T("Они уже связаны.", "They are already bonded.");
+        if (a.FreeBondsWith(b) < 1) return a.El.Sym + Lang.T(" занят: мест для связи с ", " is full: no room for a bond with ") + b.El.Sym + ".";
+        if (b.FreeBondsWith(a) < 1) return b.El.Sym + Lang.T(" занят: мест для связи с ", " is full: no room for a bond with ") + a.El.Sym + ".";
+        heldApart.Remove(PairKey(a, b));
+        Vector3 dir = b.transform.position - a.transform.position;
+        if (dir.sqrMagnitude < 1e-6f) dir = Random.onUnitSphere;
+        dir.Normalize();
+        b.transform.position = a.transform.position + dir * (a.El.Radius + b.El.Radius) * 1.3f;
+        b.Body.position = b.transform.position;
+        b.Body.linearVelocity = Vector3.zero;
+        Bond.Create(a, b);
+        ReactOnBond(a, b);
+        Recompute();
+        return null;
+    }
+
     void FixedUpdate()
     {
         var list = Atom.All;
