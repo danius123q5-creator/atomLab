@@ -74,6 +74,11 @@ Write-Host "Sources pushed."
 # ---- package the built game ----
 $buildDir = Join-Path $root "Build\Windows"
 if (-not (Test-Path (Join-Path $buildDir "AtomLab.exe"))) { throw "No build at $buildDir - build first." }
+# A running copy of the game holds its own files open and Compress-Archive dies halfway.
+# Twice already. Close ours first and give Windows a moment to release the handles.
+$running = Get-Process AtomLab -ErrorAction SilentlyContinue
+if ($running) { $running | Stop-Process -Force; Start-Sleep -Seconds 3; Write-Host "Closed a running AtomLab." }
+
 $zip = Join-Path $root ("dist\AtomLab_" + $Ver + "_Windows.zip")
 New-Item -ItemType Directory -Force -Path (Split-Path $zip) | Out-Null
 if (Test-Path $zip) { Remove-Item $zip }
