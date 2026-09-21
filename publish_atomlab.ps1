@@ -53,9 +53,15 @@ if ($haveOrigin) { git remote set-url origin $remoteUrl } else { git remote add 
 # The header must be ONE argument. Written inline as -c http.extraHeader="Authorization:
 # Bearer x" PowerShell splits it on the space, git never sees the token and falls back to
 # asking for a username - which in batch mode is a hard "terminal prompts disabled".
-$hdrArg = "http.extraHeader=Authorization: Bearer " + $tok
+# http.extraHeader did NOT authenticate here (git still got a 401 and asked for a username),
+# so we push to an URL that carries the token. The URL is passed INLINE, never stored: the
+# remote "origin" keeps the clean address, so no token lands in .git/config. Output is
+# filtered anyway, because git echoes the remote URL on error.
 $env:GIT_TERMINAL_PROMPT = "0"
-git -c http.proxy=$proxy -c $hdrArg push -u origin HEAD:main
+$pushUrl = "https://x-access-token:$tok@github.com/$owner/$repoName.git"
+$out = (git -c http.proxy=$proxy push $pushUrl HEAD:main 2>&1 | Out-String)
+$out = $out.Replace($tok, "***")
+Write-Host $out
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "git push failed with code $LASTEXITCODE" }
 Pop-Location
 Write-Host "Sources pushed."
