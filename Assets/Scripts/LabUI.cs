@@ -1082,10 +1082,13 @@ public class LabUI : MonoBehaviour
         float sciH = sci == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(sci), Mathf.Max(60f, decW)), 18f, 72f);
         float advH = advice == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(advice), Mathf.Max(60f, decW)), 18f, 70f) + 4f;
         float unsH = unstable == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(unstable), Mathf.Max(60f, decW)), 18f, 70f) + 4f;
+        // 2.6, владелец: у незнакомой молекулы — не только «не держится», но и её свойства.
+        string props = best.Info == null ? MolFacts.Properties(best) : null;
+        float propH = props == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(props), Mathf.Max(60f, decW)), 18f, 90f) + 4f;
         float decH = Mathf.Clamp(sSmall.CalcHeight(new GUIContent(decode), Mathf.Max(60f, decW)), 18f, 54f);
         float dy = decH - 18f;                                                       // сколько добавили переносы
         float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f + 18f + dy + sciH   // +16 расшифровка, +18 размер
-                  + unsH + advH;
+                  + unsH + advH + propH;
         cardHeight = h;
         var r = new Rect(x, SH - h - 20f, w, h);
 
@@ -1146,18 +1149,25 @@ public class LabUI : MonoBehaviour
                               "Not in the game's reference book. That does not mean it does not exist.");
             GUI.Label(new Rect(r.x + 14f, r.y + 54f + oy, r.width - 24f, 34f),
                 text + "  " + Lang.T("Атомов: ", "Atoms: ") + best.Atoms.Count, sSmall);
+            if (props != null)
+            {
+                var keepP = sSmall.normal.textColor;
+                sSmall.normal.textColor = new Color(0.7f, 0.95f, 0.8f);
+                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy, r.width - 24f, propH), props, sSmall);
+                sSmall.normal.textColor = keepP;
+            }
             if (unstable != null)
             {
                 var keepU = sSmall.normal.textColor;
                 sSmall.normal.textColor = new Color(1f, 0.45f, 0.4f);
-                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy, r.width - 24f, unsH), unstable, sSmall);
+                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy + propH, r.width - 24f, unsH), unstable, sSmall);
                 sSmall.normal.textColor = keepU;
             }
             if (advice != null)
             {
                 var keepA = sSmall.normal.textColor;
                 sSmall.normal.textColor = new Color(1f, 0.85f, 0.45f);
-                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy + unsH, r.width - 24f, advH), advice, sSmall);
+                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy + propH + unsH, r.width - 24f, advH), advice, sSmall);
                 sSmall.normal.textColor = keepA;
             }
         }

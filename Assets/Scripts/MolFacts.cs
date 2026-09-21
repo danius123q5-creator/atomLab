@@ -208,6 +208,129 @@ public static class MolFacts
         return Lang.T("Для стабильности: ", "For stability: ") + string.Join("; ", tips.ToArray()) + ".";
     }
 
+    // ==================== свойства собранной молекулы (21.09, владелец, 2.6) ====================
+    // «Чтобы игра говорила не только "это невозможно" и "это развалится", но и "эта молекула
+    // обладает свойствами: …"». Вещества нет в справочнике — значит, свойства не выписать, а
+    // только ОЦЕНИТЬ по тому, из чего и как она собрана. Так и пишем: «оценка по составу».
+    //   • полярность — по настоящей форме молекулы в зоне: сумма векторов связей, каждый длиной
+    //     в разность электроотрицательностей. У CO2 и CH4 они гасят друг друга, у воды — нет;
+    //   • водородные связи — H на азоте, кислороде или фторе;
+    //   • агрегатное состояние — по массе, полярности и водородным связям (грубо, «вероятно»);
+    //   • растворимость, кислотность/щёлочность, горючесть, окислитель, яд, радиоактивность.
+
+    static readonly HashSet<string> Poison = new HashSet<string> { "Hg", "Pb", "Cd", "As", "Tl", "Be", "Se", "Ba", "Sb" };
+
+    public static string Properties(Lab.Mol m)
+    {
+        if (m == null || m.Atoms.Count < 2) return null;
+        var props = new List<string>();
+        float mass = 0f;
+        bool hasMetal = false, ionic = false, hasC = false, hasH = false, peroxide = false, cyanide = false;
+        int hbO = 0, hbN = 0, hbF = 0, acidH = 0, baseOH = 0, oxCount = 0;
+        string radio = null, poison = null;
+        Vector3 dip = Vector3.zero; int polarBonds = 0;
+
+        foreach (var a in m.Atoms)
+        {
+            if (a == null) continue;
+            string s = a.El.ChemSym;
+            mass += a.El.Mass;
+            if (IsMetal(a.El)) hasMetal = true;
+            if (s == "C") hasC = true;
+            if (s == "H") hasH = true;
+            if (s == "O") oxCount++;
+            if (radio == null && (a.El.Z == 43 || a.El.Z == 61 || a.El.Z >= 84)) radio = Lang.Name(a.El);
+            if (poison == null && Poison.Contains(s)) poison = Lang.Name(a.El);
+            foreach (var b in a.Bonds)
+            {
+                var o = b.Other(a);
+                if (o == null) continue;
+                string os = o.El.ChemSym;
+                if (s == "H")
+                {
+                    if (os == "O")
+                    {
+                        hbO++;
+                        // H–O–X: X неметалл, не углерод и не водород — кислотная группа (как в H2SO4);
+                        // X металл — гидроксид, щелочная.
+                        foreach (var b2 in o.Bonds)
+                        {
+                            var x = b2.Other(o);
+                            if (x == null || x == a) continue;
+                            if (IsMetal(x.El)) baseOH++;
+                            else if (x.El.ChemSym != "C" && x.El.ChemSym != "H") acidH++;
+                        }
+                    }
+                    else if (os == "N") hbN++;
+                    else if (os == "F") hbF++;
+                    if (os == "F" || os == "Cl" || os == "Br" || os == "I") acidH++;   // галогеноводород — кислота
+                }
+                if (a.GetInstanceID() > o.GetInstanceID()) continue;              // дальше — каждая связь один раз
+                if (s == "O" && os == "O") peroxide = true;
+                if (((s == "C" && os == "N") || (s == "N" && os == "C")) && b.Order == 3) cyanide = true;
+                if (a.El.EN > 0f && o.El.EN > 0f)
+                {
+                    float d = Mathf.Abs(a.El.EN - o.El.EN);
+                    if (d >= 1.7f || (IsMetal(a.El) != IsMetal(o.El) && d >= 1.2f)) ionic = true;
+                    if (d >= 0.4f)
+                    {
+                        polarBonds++;
+                        var lo = a.El.EN < o.El.EN ? a : o; var hi = lo == a ? o : a;
+                        Vector3 v = hi.transform.position - lo.transform.position;
+                        if (v.sqrMagnitude > 1e-6f) dip += v.normalized * d;
+                    }
+                }
+            }
+        }
+
+        // Симметричный центр без неподелённых пар (C, Si, B, Ge с одинаковыми концевыми
+        // соседями) — неполярная, даже если в зоне форма чуть кривая.
+        bool symmetric = false;
+        foreach (var a in m.Atoms)
+        {
+            string s = a.El.ChemSym;
+            if (s != "C" && s != "Si" && s != "B" && s != "Ge") continue;
+            if (a.Bonds.Count + 1 != m.Atoms.Count) continue;
+            string first = null; bool same = true;
+            foreach (var b in a.Bonds) { var o = b.Other(a); if (o == null) continue; if (first == null) first = o.El.ChemSym; else if (o.El.ChemSym != first) same = false; }
+            if (same) symmetric = true;
+        }
+        bool polar = !symmetric && polarBonds > 0 && dip.magnitude > 0.3f;
+        bool hBonds = hbO + hbN + hbF > 0;
+
+        // ---- агрегатное состояние при комнатной температуре ----
+        string state;
+        if (ionic || hasMetal) state = Lang.T("твёрдое кристаллическое вещество (ионные связи держат решётку)", "a crystalline solid (ionic bonds hold a lattice)");
+        else
+        {
+            float score = mass + (polar ? 25f : 0f) + hbO * 40f + hbN * 15f + hbF * 30f;
+            state = score < 75f ? Lang.T("газ", "a gas") : score < 300f ? Lang.T("жидкость", "a liquid") : Lang.T("твёрдое", "a solid");
+            if (hBonds) state += Lang.T(" (водородные связи поднимают температуру кипения)", " (hydrogen bonds raise the boiling point)");
+        }
+        props.Add(Lang.T("при комнатной температуре, вероятно, ", "at room temperature probably ") + state);
+
+        // ---- растворимость ----
+        if (ionic) props.Add(Lang.T("в воде, скорее всего, распадается на ионы", "in water it likely splits into ions"));
+        else if (polar || hBonds) props.Add(Lang.T("полярная — растворяется в воде", "polar — dissolves in water"));
+        else props.Add(Lang.T("неполярная — в воде не растворяется, растворяется в маслах и бензине", "nonpolar — does not dissolve in water, dissolves in oils"));
+
+        // ---- кислота / щёлочь ----
+        if (acidH > 0) props.Add(Lang.T("кислотные свойства: в воде отдаёт ион H⁺", "acidic: gives off H⁺ in water"));
+        if (baseOH > 0) props.Add(Lang.T("щелочные свойства: группа OH на металле", "basic: an OH group on a metal"));
+
+        // ---- горит / окисляет ----
+        if (hasC && hasH && oxCount < 2) props.Add(Lang.T("горит (углерод и водород сгорают до CO₂ и воды)", "burns (carbon and hydrogen burn to CO₂ and water)"));
+        else if (hasH && !hasC && !hBonds && !hasMetal && acidH == 0) props.Add(Lang.T("водород на неметалле — может вспыхнуть на воздухе", "hydrogen on a nonmetal — may ignite in air"));
+        if (peroxide) props.Add(Lang.T("связь O–O: сильный окислитель, неустойчива — как перекись", "an O–O bond: a strong oxidizer, unstable — like peroxide"));
+
+        // ---- опасность ----
+        if (cyanide) props.Add(Lang.T("группа C≡N — ядовита, как цианиды", "a C≡N group — poisonous like cyanides"));
+        if (poison != null) props.Add(Lang.T("ядовита: ", "poisonous: ") + poison + Lang.T(" — тяжёлый яд", " is a heavy poison"));
+        if (radio != null) props.Add(Lang.T("радиоактивна: ", "radioactive: ") + radio + Lang.T(" распадается и излучает", " decays and emits radiation"));
+
+        return Lang.T("Свойства (оценка по составу и форме): ", "Properties (estimated from composition and shape): ") + string.Join("; ", props.ToArray()) + ".";
+    }
+
     // ==================== ВУЗник: полярность ====================
 
     /// <summary>Полярность связей по разности электроотрицательностей: меньше 0.4 —

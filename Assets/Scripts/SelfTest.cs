@@ -125,7 +125,18 @@ public class SelfTest : MonoBehaviour
                 yield return new WaitForSeconds(1.2f);
                 ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(DataDir, "insideshot.png"));
                 yield return new WaitForSeconds(1f);
+                ui.ShowInside(null);
             }
+            // карточка незнакомой молекулы со свойствами (как HFOPo у владельца)
+            Lab.I.ClearZone(); yield return new WaitForSeconds(0.2f);
+            var unk = new List<Atom>();
+            foreach (var sym in new[] { "Po", "O", "H", "F" }) unk.Add(Atom.Spawn(Elements.BySymbol(sym), Lab.ZoneCenter));
+            Chemistry.Assemble(unk, Lab.ZoneCenter);
+            yield return new WaitForSeconds(1.5f);
+            Lab.I.Recompute();
+            yield return new WaitForSeconds(0.5f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(DataDir, "cardshot.png"));
+            yield return new WaitForSeconds(1f);
             Debug.Log("MAPSHOT " + shot);
             Application.Quit(0);
             yield break;
@@ -302,6 +313,34 @@ public class SelfTest : MonoBehaviour
             float pm = pts.Count > 0 ? pts[0].Mass : 0f;
             bool ptOk = pts.Count == 1 && Mathf.Abs(pm - 18f) < 0.2f && pts[0].Atoms == 3;
             Debug.Log("SELFTEST map-point: точек " + pts.Count + ", масса " + pm.ToString("0.00") + (ptOk ? " OK" : " MISMATCH"));
+            lab.ClearZone();
+        }
+
+        // 2.6: свойства собранной молекулы — проверяем на настоящих веществах, где ответ известен.
+        {
+            string[] want = { "H2O", "CH4", "CO2", "HCl", "NaCl", "C2H6O" };
+            string propLog = ""; bool propOk = true;
+            foreach (var f in want)
+            {
+                lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+                Presets.SpawnPopular(new Presets.Pop { Formula = f, Ru = f, En = f });
+                yield return new WaitForSeconds(0.6f);
+                lab.Recompute();
+                Lab.Mol pm2 = null; foreach (var m in lab.Mols) if (m.Atoms.Count > 1 && (pm2 == null || m.Atoms.Count > pm2.Atoms.Count)) pm2 = m;
+                string pr = pm2 != null ? MolFacts.Properties(pm2) : null;
+                if (pr == null) { propOk = false; propLog += f + ":нет "; continue; }
+                bool gas = pr.Contains("вероятно, газ"), liquid = pr.Contains("вероятно, жидкость"), solid = pr.Contains("твёрдое");
+                bool inWater = pr.Contains("растворяется в воде") && !pr.Contains("не растворяется"), acid = pr.Contains("кислотные"), burns = pr.Contains("горит");
+                bool ok = f == "H2O" ? liquid && inWater && !burns
+                        : f == "CH4" ? gas && !inWater && burns
+                        : f == "CO2" ? gas && !inWater && !burns
+                        : f == "HCl" ? gas && inWater && acid
+                        : f == "NaCl" ? solid && pr.Contains("ионы")
+                        : liquid && inWater && burns;   // спирт
+                propOk &= ok;
+                propLog += f + (ok ? ":ok " : ":ПЛОХО[" + pr + "] ");
+            }
+            Debug.Log("SELFTEST properties: " + propLog.Trim() + (propOk ? " OK" : " MISMATCH"));
             lab.ClearZone();
         }
 
