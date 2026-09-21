@@ -407,9 +407,23 @@ public class LabUI : MonoBehaviour
         }
         GUI.color = Color.white;
 
+        // Притяжение масс — кнопкой здесь, а не на карте: карта только показывает (владелец, 21.09).
+        float wGrav = Mathf.Round((W - 28f) * 0.36f);
+        var gv = Gravity.I;
+        if (gv != null)
+        {
+            GUI.color = gv.On ? new Color(0.8f, 0.65f, 1f) : Color.white;
+            if (GUI.Button(new Rect(panelX + W - 14f - wGrav, 202f, wGrav, 26f),
+                gv.On ? Lang.T("Притяжение: ВКЛ", "Gravity: ON") : Lang.T("Притяжение: выкл", "Gravity: off"), sTab))
+            {
+                gv.On = !gv.On;
+                Lab.I.Say(gv.On ? Lang.T("Притяжение включено: лёгкие атомы потянутся к тяжёлым.", "Gravity on: light atoms will drift to heavy ones.")
+                                : Lang.T("Притяжение выключено.", "Gravity off."), new Color(0.8f, 0.65f, 1f));
+            }
+        }
         GUI.color = quarkOn ? new Color(0.85f, 0.6f, 1f) : Color.white;
-        if (GUI.Button(new Rect(panelX + 14f, 202f, W - 28f, 26f),
-            quarkOn ? Lang.T("← выйти из сборки кварков", "← leave quark builder") : Lang.T("Сборка из кварков (этаж ниже атома)", "Quark builder (one level below the atom)"), sTab))
+        if (GUI.Button(new Rect(panelX + 14f, 202f, gv != null ? W - 28f - wGrav - 6f : W - 28f, 26f),
+            quarkOn ? Lang.T("← выйти из сборки кварков", "← leave quark builder") : Lang.T("Сборка из кварков", "Quark builder"), sTab))
             ToggleQuarks();
 
         GUI.color = builderOn ? new Color(1f, 0.7f, 0.35f) : Color.white;
@@ -792,7 +806,7 @@ public class LabUI : MonoBehaviour
         Vector2 mh = Gravity.MapHalf;
         float mapS = (w - 12f - 14f) / (2f * mh.x + 0.7f * mh.y);
         float mapH = gravOpen ? Mathf.Min(0.9f * mh.y * mapS + 64f + 14f, Mathf.Max(90f, SH - y - 120f)) : 0f;
-        float h = gravOpen ? 34f + mapH + 100f : 30f;
+        float h = gravOpen ? 34f + mapH + 42f : 30f;
         var r = new Rect(x, y, w, h);
         gravRect = r;
         GUI.color = new Color(0f, 0f, 0f, 0.6f);
@@ -810,21 +824,10 @@ public class LabUI : MonoBehaviour
         GUI.color = Color.white;
         if (Event.current.type == EventType.Repaint) DrawFunnels(mr);
 
-        float yy = mr.yMax + 6f;
-        bool on = GUI.Toggle(new Rect(r.x + 8f, yy, w - 16f, 22f), g.On, Lang.T("  Тяжёлые притягивают лёгких", "  Heavy atoms pull light ones"));
-        if (on != g.On)
-        {
-            g.On = on;
-            Lab.I.Say(on ? Lang.T("Притяжение включено: лёгкие атомы потянутся к тяжёлым.", "Gravity on: light atoms will drift to heavy ones.")
-                         : Lang.T("Притяжение выключено.", "Gravity off."), new Color(0.8f, 0.65f, 1f));
-        }
-        yy += 24f;
-        GUI.Label(new Rect(r.x + 8f, yy, w - 16f, 18f), Lang.T("Сила притяжения: ", "Pull strength: ") + Mathf.RoundToInt(g.Strength * 100f) + "%", sSmall);
-        g.Strength = GUI.HorizontalSlider(new Rect(r.x + 8f, yy + 20f, w - 16f, 16f), g.Strength, 0f, 1f);
-        yy += 38f;
+        float yy = mr.yMax + 4f;
         GUI.Label(new Rect(r.x + 8f, yy, w - 16f, 36f),
             Lab.Mode >= Lab.Level.Uni ? Lang.T("Глубина = масса. В жизни тяготение атомов в 10³⁶ раз слабее их зарядов.", "Depth = mass. Real atomic gravity is 10³⁶ times weaker than charge.")
-                                      : Lang.T("Чем тяжелее атом, тем глубже его воронка.", "The heavier the atom, the deeper its funnel."), sSmall);
+                                      : Lang.T("Молекула — одна точка с массой всех её атомов. Тяжелее — глубже воронка.", "A molecule is one point with the mass of all its atoms. Heavier — deeper funnel."), sSmall);
     }
 
     /// <summary>Сетка-«ткань», продавленная атомами. Косой вид сверху: даль уходит вверх,
@@ -868,16 +871,15 @@ public class LabUI : MonoBehaviour
         mapTex.Apply(false);
         GUI.DrawTexture(mr, mapTex);
 
-        // Сами атомы — на дне своих воронок, кружок тем крупнее, чем тяжелее.
-        foreach (var a in Atom.All)
+        // Молекула — одна точка на дне своей воронки (сумма масс), атом-одиночка — своя.
+        foreach (var pt in Gravity.Points())
         {
-            if (a == null) continue;
-            Vector2 p = Gravity.MapPos(a.transform.position);
+            Vector2 p = pt.Pos;
             if (Mathf.Abs(p.x) > half.x + 0.2f || Mathf.Abs(p.y) > half.y + 0.2f) continue;
             float d = Gravity.Depth(p.x, p.y);
             var sp = new Vector2(cx + p.x * S + p.y * S * 0.35f, cy - p.y * S * 0.45f + d * depthPx);
-            float size = 4f + Mathf.Pow(Mathf.Max(1f, a.El.Mass), 1f / 3f) * 1.3f;
-            GUI.color = a.El.Color;
+            float size = 4f + Mathf.Pow(Mathf.Max(1f, pt.Mass), 1f / 3f) * 1.3f;
+            GUI.color = pt.Color;
             GUI.DrawTexture(new Rect(sp.x - size * 0.5f, sp.y - size * 0.5f, size, size), DotTex);
         }
         GUI.color = Color.white;

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>Притяжение масс (21.09, владелец: «сделай, чтоб тяжёлые частицы притягивали к себе
@@ -65,16 +66,50 @@ public class Gravity : MonoBehaviour
     public static float Depth(float u, float v)
     {
         float phi = 0f;
-        foreach (var a in Atom.All)
+        foreach (var pt in Points())
         {
-            if (a == null) continue;
-            Vector2 p = MapPos(a.transform.position);
+            Vector2 p = pt.Pos;
             float du = p.x - u, dv = p.y - v;
             // Для картинки берём спад 1/r², а не 1/r: с 1/r уран наклонял всю сетку целиком, и
             // отдельных воронок было не различить (кадр 21.09). Сила в FixedUpdate — та же 1/r².
-            phi += a.El.Mass / (du * du + dv * dv + Soft2);
+            phi += pt.Mass / (du * du + dv * dv + Soft2);
         }
         return 1f - Mathf.Exp(-phi / 60f);
+    }
+
+    /// <summary>Точка карты: молекула целиком или одиночный атом.</summary>
+    public struct Point { public Vector2 Pos; public float Mass; public Color Color; public int Atoms; }
+
+    static readonly List<Point> points = new List<Point>();
+    static int pointsFrame = -1;
+
+    /// <summary>🔴 21.09, владелец: «при соединении молекула суммирует массу всех атомов и
+    /// становится точкой». На карте молекула — одна точка в центре масс с суммой масс атомов,
+    /// и воронка у неё одна. Цвет — самого тяжёлого атома. Считаем раз за кадр.</summary>
+    public static List<Point> Points()
+    {
+        if (pointsFrame == Time.frameCount) return points;
+        pointsFrame = Time.frameCount;
+        points.Clear();
+        var seen = new HashSet<Atom>();
+        if (Lab.I != null)
+            foreach (var m in Lab.I.Mols)
+            {
+                float mass = 0f; Vector3 c = Vector3.zero; Atom heavy = null; int n = 0;
+                foreach (var a in m.Atoms)
+                {
+                    if (a == null || !seen.Add(a)) continue;
+                    mass += a.El.Mass; c += a.transform.position * a.El.Mass; n++;
+                    if (heavy == null || a.El.Mass > heavy.El.Mass) heavy = a;
+                }
+                if (n == 0 || mass <= 0f) continue;
+                points.Add(new Point { Pos = MapPos(c / mass), Mass = mass, Color = heavy.El.Color, Atoms = n });
+            }
+        // Атом, которого ещё нет в списке молекул (только что появился), — своей точкой.
+        foreach (var a in Atom.All)
+            if (a != null && !seen.Contains(a))
+                points.Add(new Point { Pos = MapPos(a.transform.position), Mass = a.El.Mass, Color = a.El.Color, Atoms = 1 });
+        return points;
     }
 
     /// <summary>Координаты атома на карте: в 3D — вид сверху (x, z), в 2D — сама плоскость (x, y).</summary>

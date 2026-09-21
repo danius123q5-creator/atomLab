@@ -112,6 +112,7 @@ public class SelfTest : MonoBehaviour
             Atom.Spawn(Elements.BySymbol("Fe"), c0 + new Vector3(2f, 0.5f, 1.5f));
             Atom.Spawn(Elements.BySymbol("O"), c0 + new Vector3(0.5f, -1f, -2f));
             for (int i = 0; i < 5; i++) Atom.Spawn(Elements.BySymbol("He"), c0 + new Vector3(-4f + i * 2f, 1.5f, 3f));
+            Presets.SpawnPopular(new Presets.Pop { Formula = "C2H6O", Ru = "спирт", En = "ethanol" });
             Gravity.I.On = true;
             yield return new WaitForSeconds(2.5f);
             string shot = System.IO.Path.Combine(DataDir, "mapshot.png");
@@ -281,6 +282,18 @@ public class SelfTest : MonoBehaviour
             float ooGap = -1f; { var os = new List<Atom>(); foreach (var a in Atom.All) if (a.El.Sym == "O") os.Add(a); if (os.Count == 2) ooGap = (os[0].transform.position - os[1].transform.position).magnitude; }
             bool noSelfBond = Bond.All.Count == bondsBefore;
             Debug.Log("SELFTEST gravity-no-bond: связей было " + bondsBefore + ", стало " + Bond.All.Count + ", O–O " + ooGap.ToString("0.00") + (noSelfBond ? " OK" : " MISMATCH"));
+            lab.ClearZone();
+
+            // Молекула на карте — одна точка с суммой масс (владелец, 21.09).
+            yield return new WaitForSeconds(0.15f);
+            Presets.SpawnPopular(new Presets.Pop { Formula = "H2O", Ru = "вода", En = "water" });
+            yield return new WaitForSeconds(0.3f);
+            lab.Recompute();
+            yield return null;
+            var pts = Gravity.Points();
+            float pm = pts.Count > 0 ? pts[0].Mass : 0f;
+            bool ptOk = pts.Count == 1 && Mathf.Abs(pm - 18f) < 0.2f && pts[0].Atoms == 3;
+            Debug.Log("SELFTEST map-point: точек " + pts.Count + ", масса " + pm.ToString("0.00") + (ptOk ? " OK" : " MISMATCH"));
             lab.ClearZone();
         }
 
