@@ -82,6 +82,7 @@ public static class Chemistry
         // ни одно правило не подошло. Иначе кислота с щёлочью молча превращались бы во
         // что-нибудь крупное вместо соли и воды.
         ReactionEngine.Refusals.Clear();
+        ReactionEngine.Escaped.Clear();
         var chain = new List<string>();
         for (int step = 0; step < 8; step++)
         {

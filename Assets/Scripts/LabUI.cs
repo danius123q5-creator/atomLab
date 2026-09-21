@@ -87,7 +87,35 @@ public class LabUI : MonoBehaviour
         return Mathf.Max(1f, k);
     }
 
-    void Awake() { I = this; }
+    void Awake()
+    {
+        I = this;
+        // 21.09, владелец (скриншот с телефона): «в телефон версии атомлаба места нет».
+        // На телефоне панель с таблицей съедала почти половину экрана, и зоне оставался угол.
+        // Поэтому на телефоне игра стартует со СПРЯТАННОЙ панелью: язычок у левого края и
+        // свайп вправо её достают. На ПК всё как было — там места хватает.
+        if (Application.isMobilePlatform || Touchy) { open = false; startClosed = true; }
+    }
+
+    bool startClosed;
+
+    /// <summary>Телефонная раскладка включается и ключом -uiscale (чтобы проверить её на ПК).</summary>
+    static bool Touchy
+    {
+        get
+        {
+            foreach (var a in System.Environment.GetCommandLineArgs()) if (a == "-uiscale") return true;
+            return false;
+        }
+    }
+
+    /// <summary>На телефоне после готового вещества панель уезжает: молекулу надо видеть на
+    /// весь экран. После отдельного элемента — нет: молекулу собирают по атому, и открывать
+    /// панель на каждый атом было бы мучением.</summary>
+    void AfterCompoundOnPhone()
+    {
+        if (startClosed) open = false;
+    }
 
     public void TogglePanel() { open = !open; }
 
@@ -183,12 +211,40 @@ public class LabUI : MonoBehaviour
         DrawMenu();
         DrawCarry(e);
         DrawHoverTip();
+        DrawCellTip();
     }
 
     /// <summary>21.09, из очереди владельца на 2.2: «подсказка при наведении на атом:
     /// название, заряд, связи». Только для мыши: у пальца нет «наведения», на телефоне то же
     /// самое показывает меню по долгому нажатию. Не мешаем, когда что-то тащат, тянут рамку,
     /// открыто меню или курсор над панелью.</summary>
+    /// <summary>21.09, владелец: «при наведении курсора на элемент выводить стату над
+    /// курсором». Раньше данные элемента печатались строкой над таблицей — глаз уходил
+    /// от клетки. Теперь та же строка всплывает прямо над курсором.</summary>
+    void DrawCellTip()
+    {
+        if (Input.touchCount > 0 || carrying != null || showPresets) return;
+        if (hover == null) return;
+        var h = hover;
+        string cap = h.MaxBonds > h.Valence ? h.Valence + Lang.T(" (до ", " (up to ") + h.MaxBonds + ")" : h.Valence.ToString();
+        string text = h.Z + ". " + Lang.Name(h) + " (" + h.Sym + ")\n" +
+                      Lang.T("Масса: ", "Mass: ") + h.Mass.ToString("0.###") + "\n" +
+                      Lang.T("Связей: ", "Bonds: ") + cap +
+                      (h.EN > 0f ? Lang.T("   ЭО ", "   EN ") + h.EN.ToString("0.00") : "") + "\n" +
+                      h.ClassName + "  ·  " + h.PaintName;
+        Vector2 m = Event.current.mousePosition;
+        var r = new Rect(m.x - 110f, m.y - 92f, 250f, 80f);           // НАД курсором, чтобы не закрывать клетку
+        if (r.y < 4f) r.y = m.y + 22f;
+        if (r.x < 4f) r.x = 4f;
+        if (r.xMax > SW - 4f) r.x = SW - 4f - r.width;
+        GUI.color = new Color(0f, 0f, 0f, 0.85f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = h.PaintColor;
+        GUI.DrawTexture(new Rect(r.x, r.y, 3f, r.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(r.x + 9f, r.y + 3f, r.width - 12f, r.height - 4f), text, sSmall);
+    }
+
     void DrawHoverTip()
     {
         if (Input.touchCount > 0 || Application.isMobilePlatform) return;
@@ -268,6 +324,7 @@ public class LabUI : MonoBehaviour
                 // срабатывать сама — поэтому сетка ловит нажатие здесь, как клетки таблицы,
                 // а не через GUI.Button.
                 Presets.SpawnPopular(Presets.Grid[PopHit(e.mousePosition)]);
+                AfterCompoundOnPhone();
             }
             else if (drag == DragKind.Scroll && d.magnitude < 10f && candidate != null && Lab.I != null)
             {
@@ -286,6 +343,16 @@ public class LabUI : MonoBehaviour
     }
 
     void DrawPanel(float cw, float ch)
+    {
+        // 21.09: всё, что шире панели (хвост легенды «собранные»), торчало у левого края
+        // экрана, когда панель спрятана. Режем рисование по правому краю панели. Начало клипа
+        // в (0,0), поэтому координаты внутри не меняются.
+        GUI.BeginClip(new Rect(0f, 0f, Mathf.Max(0f, panelX + W + HandleW), SH));
+        DrawPanelInner(cw, ch);
+        GUI.EndClip();
+    }
+
+    void DrawPanelInner(float cw, float ch)
     {
         // Фон панели.
         GUI.color = new Color(0.06f, 0.08f, 0.12f, 0.94f);
@@ -369,7 +436,7 @@ public class LabUI : MonoBehaviour
         {
             var p = Presets.All[i];
             if (GUI.Button(new Rect(panelX + 14f, y, W - 28f, 26f), p.Name + "   ·   " + p.Formula, sTab))
-                Presets.Spawn(p);
+            { Presets.Spawn(p); AfterCompoundOnPhone(); }
             y += 29f;
         }
         scrollMax = 0f;
@@ -529,29 +596,73 @@ public class LabUI : MonoBehaviour
 
     // ==================== мир: подписи над атомами и молекулами ====================
 
+    static Texture2D _dot;
+    /// <summary>Круглая точка: квадрат выглядел бы пикселем, а не «местом для связи».</summary>
+    static Texture2D DotTex
+    {
+        get
+        {
+            if (_dot != null) return _dot;
+            const int N = 32;
+            _dot = new Texture2D(N, N, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            var px = new Color[N * N];
+            float c = (N - 1) * 0.5f;
+            for (int yy = 0; yy < N; yy++)
+                for (int xx = 0; xx < N; xx++)
+                {
+                    float d = Mathf.Sqrt((xx - c) * (xx - c) + (yy - c) * (yy - c));
+                    px[yy * N + xx] = new Color(1f, 1f, 1f, Mathf.Clamp01(c - d + 0.5f));
+                }
+            _dot.SetPixels(px); _dot.Apply();
+            return _dot;
+        }
+    }
+
     void DrawWorldLabels()
     {
         var cam = Lab.I != null ? Lab.I.Cam : null;
         if (cam == null) return;
 
+        // 21.09, владелец: «значки у молекул крупнее и рисовать зелёные и красные точки».
+        // Символ теперь растёт вместе с шариком на экране (крупный атом вблизи — крупная
+        // буква), с тенью, чтобы читался и на жёлтой сере, и на белом водороде. Вместо точек-
+        // крапинок и слова «занят» — кольцо точек вокруг символа: КРАСНАЯ — занятая связь,
+        // ЗЕЛЁНАЯ — свободная. Сколько точек, столько связей: полный атом виден сразу.
         foreach (var a in Atom.All)
         {
-            Vector3 sp = cam.WorldToScreenPoint(a.transform.position); sp.x /= U; sp.y /= U;
+            Vector3 sp = cam.WorldToScreenPoint(a.transform.position);
             if (sp.z <= 0f) continue;
+            Vector3 edge = cam.WorldToScreenPoint(a.transform.position + cam.transform.right * a.El.Radius);
+            float rad = Mathf.Max(6f, ((Vector2)edge - (Vector2)sp).magnitude) / U;   // радиус шарика в единицах интерфейса
+            sp.x /= U; sp.y /= U;
             float y = SH - sp.y;
+
+            int keep = sWorld.fontSize;
+            sWorld.fontSize = Mathf.RoundToInt(Mathf.Clamp(rad * 0.62f, 13f, 44f));
+            var box = new Rect(sp.x - rad * 1.5f, y - rad * 0.6f, rad * 3f, rad * 1.2f);
+            sWorld.normal.textColor = new Color(0f, 0f, 0f, 0.75f);
+            GUI.Label(new Rect(box.x + 1.5f, box.y + 1.5f, box.width, box.height), a.El.Sym, sWorld);
             sWorld.normal.textColor = Color.white;
-            GUI.Label(new Rect(sp.x - 30f, y - 10f, 60f, 20f), a.El.Sym, sWorld);
-            if (a.FreeValence > 0)
+            GUI.Label(box, a.El.Sym, sWorld);
+            sWorld.fontSize = keep;
+
+            int used = a.UsedBonds;
+            int free = a.FreeValence;
+            int n = used + free;
+            if (n <= 0) continue;
+            float dot = Mathf.Clamp(rad * 0.2f, 5f, 14f);
+            float ring = rad * 0.8f;
+            for (int k = 0; k < n; k++)
             {
-                sWorld.normal.textColor = new Color(0.6f, 0.9f, 1f, 0.9f);
-                GUI.Label(new Rect(sp.x - 30f, y + 6f, 60f, 16f), new string('·', a.FreeValence), sWorld);
+                float ang = (90f - 360f * k / n) * Mathf.Deg2Rad;      // первая точка сверху, дальше по часовой
+                float dx = Mathf.Cos(ang) * ring, dy = -Mathf.Sin(ang) * ring;
+                var r = new Rect(sp.x + dx - dot * 0.5f, y + dy - dot * 0.5f, dot, dot);
+                GUI.color = new Color(0f, 0f, 0f, 0.6f);
+                GUI.DrawTexture(new Rect(r.x - 1f, r.y - 1f, r.width + 2f, r.height + 2f), DotTex);
+                GUI.color = k < used ? new Color(1f, 0.25f, 0.2f) : new Color(0.25f, 1f, 0.35f);
+                GUI.DrawTexture(r, DotTex);
             }
-            else if (a.El.Valence > 0)
-            {
-                // Пусто под символом читалось как «всё в порядке». Теперь занятый атом виден.
-                sWorld.normal.textColor = new Color(1f, 0.55f, 0.4f, 0.95f);
-                GUI.Label(new Rect(sp.x - 30f, y + 6f, 60f, 16f), Lang.T("занят", "full"), sWorld);
-            }
+            GUI.color = Color.white;
         }
 
         foreach (var m in Lab.I.Mols)

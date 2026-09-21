@@ -126,6 +126,10 @@ $uh = @{ Authorization = "Bearer $tok"; "User-Agent" = "AtomLabPublish" }
 $files = @($zip)
 if ($apk) { $files += $apk }
 if ($linZip) { $files += $linZip }
+# macOS archive is built beforehand (python zip that keeps the +x bit on Contents/MacOS -
+# Compress-Archive drops it and the Mac then refuses to start the app).
+$macZip = Join-Path $root ("dist\AtomLab_" + $Ver + "_Mac.zip")
+if (Test-Path $macZip) { $files += $macZip; Write-Host ("Mac: " + $macZip) }
 foreach ($f in $files) {
     $name = Split-Path $f -Leaf
     Write-Host ("Uploading " + $name + "...")

@@ -71,6 +71,11 @@ public static class Reactions
     {
         New("SO4", 2, "S", 1, "O", 4),
         New("CO3", 2, "C", 1, "O", 3),
+        // 21.09: гидрокарбонат (пищевая сода NaHCO3) и остатки органических кислот — уксусной
+        // и муравьиной. Без них сода с уксусом, самый известный опыт на кухне, не шёл.
+        New("HCO3", 1, "H", 1, "C", 1, "O", 3),
+        New("CH3COO", 1, "C", 2, "H", 3, "O", 2),
+        New("HCOO", 1, "C", 1, "H", 1, "O", 2),
         New("PO4", 3, "P", 1, "O", 4),
         New("NO3", 1, "N", 1, "O", 3),
         New("OH",  1, "O", 1, "H", 1),
@@ -87,6 +92,23 @@ public static class Reactions
         var c = new Dictionary<string, int>();
         for (int i = 0; i < pairs.Length; i += 2) c[(string)pairs[i]] = (int)pairs[i + 1];
         return new Anion { Name = name, Charge = charge, Comp = c };
+    }
+
+    /// <summary>Растворима ли соль в воде — по школьной таблице растворимости, упрощённо:
+    /// соли натрия, калия, аммония и все нитраты растворимы; хлориды — кроме серебра и
+    /// свинца; сульфаты — кроме бария, кальция и свинца; карбонаты и фосфаты — только у
+    /// натрия и калия; гидрокарбонаты и ацетаты растворимы.</summary>
+    public static bool Soluble(string metal, string residue)
+    {
+        if (metal == "Na" || metal == "K" || metal == "Li") return true;
+        switch (residue)
+        {
+            case "NO3": case "HCO3": case "CH3COO": case "HCOO": return true;
+            case "Cl": case "Br": case "I": return metal != "Ag" && metal != "Pb";
+            case "SO4": return metal != "Ba" && metal != "Ca" && metal != "Pb" && metal != "Sr";
+            case "F": return metal != "Ca" && metal != "Mg";
+            default: return false;           // CO3, PO4, S — у остальных металлов нерастворимы
+        }
     }
 
     public static Anion AnionByName(string n)
@@ -159,6 +181,14 @@ public static class Reactions
                 if (hCount == an.Charge && SameComp(rest, an.Comp))
                 {
                     sp.Kind = Kind.Acid; sp.Residue = an; return sp;
+                }
+                // Остаток сам содержит водород (уксусная: CH3COO + H). Тогда отнимать надо не
+                // весь водород, а ровно столько, сколько у остатка заряд.
+                if (an.Comp.ContainsKey("H") && an.Name != "HCO3")
+                {
+                    var need = new Dictionary<string, int>(an.Comp);
+                    need["H"] += an.Charge;
+                    if (SameComp(comp, need)) { sp.Kind = Kind.Acid; sp.Residue = an; return sp; }
                 }
             }
         }

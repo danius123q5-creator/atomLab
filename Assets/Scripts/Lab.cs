@@ -29,7 +29,12 @@ public class Lab : MonoBehaviour
     public static bool Mode2D
     {
         get { if (!mode2DLoaded) { mode2D = PlayerPrefs.GetInt("atomlab.2d", 0) == 1; mode2DLoaded = true; } return mode2D; }
-        set { mode2D = value; mode2DLoaded = true; PlayerPrefs.SetInt("atomlab.2d", value ? 1 : 0); PlayerPrefs.Save(); }
+        set
+        {
+            mode2D = value; mode2DLoaded = true;
+            if (SelfTest.Requested) return;           // проверка не трогает настройки игрока
+            PlayerPrefs.SetInt("atomlab.2d", value ? 1 : 0); PlayerPrefs.Save();
+        }
     }
 
     /// <summary>Держим атомы в плоскости. Не только замком по оси Z, но и возвратом на
@@ -44,10 +49,16 @@ public class Lab : MonoBehaviour
             {
                 if ((a.Body.constraints & RigidbodyConstraints.FreezePositionZ) == 0)
                     a.Body.constraints |= RigidbodyConstraints.FreezePositionZ;
-                var p = a.Body.position;
+                // 21.09: прижим через одно Body.position НЕ работал — при замке по Z физика
+                // держала тело на старой глубине, и атомы оставались «рядом на экране, далеко
+                // на деле» (проверка: разнос 2.7 после включения, вода не собиралась).
+                // Ставим и трансформ, и тело — так телепорт доходит до физики наверняка.
+                var p = a.transform.position;
                 if (Mathf.Abs(p.z - z0) > 0.0005f)
                 {
-                    p.z = z0; a.Body.position = p;
+                    p.z = z0;
+                    a.transform.position = p;
+                    a.Body.position = p;
                     var v = a.Body.linearVelocity; v.z = 0f; a.Body.linearVelocity = v;
                 }
             }
@@ -691,14 +702,24 @@ public class Lab : MonoBehaviour
     /// <summary>Есть ли в молекуле щелочной металл вместе с водой (и кислород, и водород).</summary>
     static bool IsAlkaliInWater(Mol m)
     {
-        bool alkali = false, o = false, h = false;
+        // 21.09. Было «есть щелочной металл, кислород и водород» — под это попадал любой
+        // продукт: ацетат натрия из соды с уксусом взрывался прямо в момент рождения (поймала
+        // проверка пар молекул). Теперь нужна именно ВОДА: кислород, у которого два соседа —
+        // водороды. Ни в щёлочи, ни в соде, ни в ацетате такого кислорода нет.
+        bool alkali = false, water = false;
         foreach (var a in m.Atoms)
         {
             if (a.El.Class == Elements.Cls.Alkali) alkali = true;
-            if (a.El.Sym == "O") o = true;
-            if (a.El.Sym == "H") h = true;
+            if (a.El.Sym != "O") continue;
+            int hs = 0;
+            foreach (var b in a.Bonds)
+            {
+                var other = b.A == a ? b.B : b.A;
+                if (other != null && other.El.Sym == "H") hs++;
+            }
+            if (hs >= 2) water = true;
         }
-        return alkali && o && h;
+        return alkali && water;
     }
 
     void CheckQuests(string formula)

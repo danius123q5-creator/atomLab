@@ -160,6 +160,72 @@ public class SelfTest : MonoBehaviour
         lab.ClearZone();
         Debug.Log("SELFTEST popular bad=" + popBad + " of " + Presets.Grid.Length);
 
+        // 21.09, владелец: «при переходе с 3д на 2д атомы не цепляются». Кладём в 3D кислород
+        // и два водорода РАЗНОЙ глубины, включаем 2D и сводим их в плоскости — должна выйти
+        // вода. Плюс: элемент из таблицы в 2D обязан появиться (в ручной пробе он пропал).
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Lab.Mode2D = false;
+        var o2d = Atom.Spawn(Elements.BySymbol("O"), c + new Vector3(0f, 0f, 1.2f));
+        var h2dA = Atom.Spawn(Elements.BySymbol("H"), c + new Vector3(-2.4f, 0f, -1.1f));
+        var h2dB = Atom.Spawn(Elements.BySymbol("H"), c + new Vector3(2.4f, 0f, 0.8f));
+        yield return new WaitForSeconds(0.3f);
+        Lab.Mode2D = true;
+        yield return new WaitForSeconds(0.3f);
+        float zSpread = Mathf.Abs(o2d.transform.position.z - h2dA.transform.position.z) + Mathf.Abs(o2d.transform.position.z - h2dB.transform.position.z);
+        // сводим, как рука: тянем скоростью к кислороду
+        for (int k = 0; k < 60; k++)
+        {
+            if (h2dA != null) h2dA.Body.linearVelocity = (o2d.transform.position + Vector3.left * 0.5f - h2dA.transform.position) * 6f;
+            if (h2dB != null) h2dB.Body.linearVelocity = (o2d.transform.position + Vector3.right * 0.5f - h2dB.transform.position) * 6f;
+            yield return new WaitForFixedUpdate();
+        }
+        yield return new WaitForSeconds(0.3f);
+        lab.Recompute();
+        bool water2d = HasFormula(lab, "H2O");
+        var spawned = lab.SpawnFromTable(Elements.BySymbol("C"), new Vector3(Screen.width * 0.6f, Screen.height * 0.55f, 0f));
+        yield return new WaitForSeconds(0.5f);
+        bool alive = spawned != null && Atom.All.Contains(spawned);
+        Debug.Log("SELFTEST 2d: разнос по глубине после включения " + zSpread.ToString("0.000") + " | вода=" + water2d +
+                  " | связей у O=" + o2d.Bonds.Count + " | элемент из таблицы жив=" + alive +
+                  (spawned != null ? " z=" + spawned.transform.position.z.ToString("0.00") : "") +
+                  ((water2d && alive) ? " OK" : " MISMATCH"));
+        Lab.Mode2D = false;
+        lab.ClearZone();
+
+        // 21.09: реакции ПАР молекул. Сода + уксус обязаны дать углекислый газ. Соль + вода
+        // обязаны дать объяснение про растворение и НЕ дать щёлочь с кислотой (так делал
+        // запасной «котёл», пока правила не было).
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Presets.SpawnPopular(new Presets.Pop { Formula = "NaHCO3", Ru = "сода", En = "soda" });
+        // Разводим: обе молекулы рождаются около центра со случайным сдвигом и слипались в одну
+        // (C3H5NaO5) ещё до реакции — проверка мерила слипание, а не правило.
+        foreach (var at in Atom.All) { at.transform.position += Vector3.left * 3.2f; at.Body.position = at.transform.position; }
+        yield return new WaitForSeconds(0.2f);
+        Presets.SpawnPopular(new Presets.Pop { Formula = "C2H4O2", Ru = "уксус", En = "vinegar" });
+        foreach (var at in Atom.All) if (at.transform.position.x > c.x - 1.6f) { at.transform.position += Vector3.right * 1.8f; at.Body.position = at.transform.position; }
+        yield return new WaitForSeconds(0.4f);
+        lab.Recompute();
+        foreach (var mm in lab.Mols) { var spc = Reactions.Classify(mm); Debug.Log("SELFTEST classify " + mm.Formula + " -> " + spc.Kind + " остаток=" + (spc.Residue != null ? spc.Residue.Name : "-") + " металл=" + (spc.Metal ?? "-")); }
+        ReactionEngine.Refusals.Clear();
+        Chemistry.React();
+        yield return new WaitForSeconds(0.4f);
+        lab.Recompute();
+        bool fizz = HasFormula(lab, "CO2") && HasFormula(lab, "H2O");
+        Debug.Log("SELFTEST pair soda+vinegar: " + ZoneText(lab) + (fizz ? " OK" : " MISMATCH"));
+
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Presets.SpawnPopular(new Presets.Pop { Formula = "NaCl", Ru = "соль", En = "salt" });
+        yield return new WaitForSeconds(0.2f);
+        Presets.SpawnPopular(new Presets.Pop { Formula = "H2O", Ru = "вода", En = "water" });
+        yield return new WaitForSeconds(0.4f);
+        ReactionEngine.Refusals.Clear();
+        Chemistry.React();
+        yield return new WaitForSeconds(0.4f);
+        lab.Recompute();
+        bool dissolve = HasFormula(lab, "NaCl") && HasFormula(lab, "H2O") && !HasFormula(lab, "NaOH") && ReactionEngine.Refusals.Count > 0;
+        Debug.Log("SELFTEST pair salt+water: " + ZoneText(lab) + " | " + (ReactionEngine.Refusals.Count > 0 ? ReactionEngine.Refusals[0] : "нет объяснения") + (dissolve ? " OK" : " MISMATCH"));
+        lab.ClearZone();
+
         // 21.09: предел связей. Сера с КИСЛОРОДОМ обязана взять больше двух связей (SO3,
         // H2SO4 руками), а сера с ВОДОРОДОМ — не больше двух (H2S, а не H3S). Кладём атомы
         // вплотную, как это сделала бы рука, и считаем, сколько связей сера взяла сама.

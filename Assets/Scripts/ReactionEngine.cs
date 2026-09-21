@@ -22,6 +22,12 @@ public static class ReactionEngine
     /// всё затевалось — «медь с соляной кислотой не реагирует» и есть знание.</summary>
     public static readonly List<string> Refusals = new List<string>();
 
+    /// <summary>21.09. Газы, выделившиеся в ЭТОЙ цепочке. Сода с уксусом дают CO2 — и
+    /// следующим же шагом правило «оксид + вода» собирало его с водой обратно в угольную
+    /// кислоту. В стакане наоборот: угольная кислота распадается, газ уходит пузырями, отсюда
+    /// и шипение. Выделившийся газ в этой же цепочке с водой больше не соединяем.</summary>
+    public static readonly HashSet<string> Escaped = new HashSet<string>();
+
     class Group
     {
         public Reactions.Species Sample;
@@ -84,6 +90,58 @@ public static class ReactionEngine
                 new[] { salt, water }, new[] { 1, ch * v / g },
                 Lang.T("нейтрализация: кислота отдаёт H, щёлочь — OH, из них выходит вода, остальное — соль", "neutralisation: the acid gives H, the base gives OH, they make water, the rest is salt"),
                 0.45f);
+        }
+
+        // ---------- карбонат/гидрокарбонат + кислота -> соль + CO2 + вода ----------
+        // 21.09, владелец: «провести реакцию должна брать 2 молекулы и реагировать их».
+        // Сода с уксусом, мел с соляной кислотой: кислота выгоняет углекислый газ — шипение.
+        if (a.Kind == Reactions.Kind.Salt && a.Residue != null &&
+            (a.Residue.Name == "CO3" || a.Residue.Name == "HCO3") &&
+            b.Kind == Reactions.Kind.Acid && b.Residue != null && b.Residue.Name != "CO3")
+        {
+            var metal = Elements.BySymbol(a.Metal);
+            int v = Mathf.Max(1, metal.Valence);
+            int c = a.Comp["C"];                                  // остатков в одной единице соли
+            int per = a.Residue.Name == "CO3" ? 2 : 1;            // сколько H+ съедает остаток
+            int need = per * c, chA = b.Residue.Charge;
+            int g = Gcd(need, chA);
+            int saltUnits = chA / g, acidUnits = need / g;
+            int m = a.Comp[a.Metal] * saltUnits;                  // атомов металла всего
+
+            // Новая соль — формульными единицами, а не одной слипшейся молекулой.
+            int g2 = Gcd(v, chA);
+            int p = chA / g2, q = v / g2;                          // металл p, остаток q
+            var salt = new Dictionary<string, int>();
+            Reactions.Add(salt, a.Metal, p);
+            foreach (var kv in b.Residue.Comp) Reactions.Add(salt, kv.Key, kv.Value * q);
+            var co2 = new Dictionary<string, int> { { "C", 1 }, { "O", 2 } };
+            var h2o = new Dictionary<string, int> { { "H", 2 }, { "O", 1 } };
+            Escaped.Add("CO2");
+            return Run(lab, A, saltUnits, B, acidUnits,
+                new[] { salt, co2, h2o }, new[] { m / p, c * saltUnits, c * saltUnits },
+                Lang.T("кислота выгоняет из карбоната углекислый газ — отсюда шипение соды с уксусом",
+                       "the acid drives carbon dioxide out of the carbonate — that is why soda fizzes with vinegar"),
+                0.5f);
+        }
+
+        // ---------- соль + вода: растворение, а не реакция ----------
+        // Без этого правила кнопка уходила в запасной «котёл» и из соли с водой собирала
+        // щёлочь с кислотой — чего в стакане не бывает. Растворение химию не меняет: соль
+        // распадается на ионы, вода остаётся водой. Отвечаем словами и ничего не пересобираем.
+        if (a.Kind == Reactions.Kind.Salt && a.Metal != null && a.Residue != null && b.Kind == Reactions.Kind.Water)
+        {
+            if (Reactions.Soluble(a.Metal, a.Residue.Name))
+                Refuse(a.Formula + Lang.T(" с водой не реагирует, а РАСТВОРЯЕТСЯ: распадается на ионы ",
+                                          " does not react with water, it DISSOLVES: it splits into ions ") +
+                       a.Metal + "+" + Lang.T(" и ", " and ") + a.Residue.Name + "-" +
+                       (a.Formula == "NaCl" || a.Formula == "CaCl2" || a.Formula == "KCl"
+                           ? Lang.T(". Поэтому соль и плавит лёд на дорогах: солёная вода замерзает ниже нуля (у поваренной — до −21 °C).",
+                                    ". That is why salt melts ice on roads: salt water freezes below zero (table salt — down to −21 °C).")
+                           : Lang.T(". Химически и вода, и соль остаются собой.", ". Chemically both stay what they were.")));
+            else
+                Refuse(a.Formula + Lang.T(" в воде почти не растворяется — поэтому мел, мрамор и гипс не тают под дождём.",
+                                          " barely dissolves in water — that is why chalk, marble and gypsum do not melt in the rain."));
+            return null;
         }
 
         // ---------- металл + кислота -> соль + водород ----------
@@ -170,6 +228,7 @@ public static class ReactionEngine
         // ---------- оксид + вода ----------
         if (a.Kind == Reactions.Kind.Oxide && b.Kind == Reactions.Kind.Water)
         {
+            if (Escaped.Contains(a.Formula)) return null;   // газ уже улетел пузырями
             // Оксид активного металла даёт щёлочь.
             if (a.Metal != null)
             {
