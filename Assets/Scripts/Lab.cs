@@ -153,7 +153,21 @@ public class Lab : MonoBehaviour
             if (a != null) { a.Despawn(); Recompute(); }
         }
 
-        if (Input.GetKeyDown(KeyCode.Delete)) ClearZone();
+        // 🔴 21.09, владелец: Del должен убирать АТОМ ПОД КУРСОРОМ, а не всю комнату.
+        // Раньше одна клавиша сносила час работы. Всю зону чистит кнопка «Убрать атомы».
+        if (Input.GetKeyDown(KeyCode.Delete) && !overPanel)
+        {
+            var victim = dragged != null ? dragged : PickAtom(Input.mousePosition);
+            if (victim != null)
+            {
+                string sym = victim.El.Sym;
+                if (dragged == victim) dragged = null;
+                victim.Despawn();
+                Recompute();
+                Say("Убран атом " + sym + ". Всю зону чистит кнопка «Убрать атомы».", new Color(0.9f, 0.9f, 0.9f));
+            }
+            else Say("Наведи на атом и нажми Del — уберётся он один.", new Color(0.9f, 0.9f, 0.7f));
+        }
         if (Input.GetKeyDown(KeyCode.Escape) && LabUI.I != null) LabUI.I.TogglePanel();
     }
 
