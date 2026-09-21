@@ -67,8 +67,10 @@ public static class Bootstrap
         var lab = labGo.AddComponent<Lab>();
         lab.Cam = cam;
         labGo.AddComponent<LabUI>();
+        labGo.AddComponent<Traits>();      // характеры элементов: магнетизм, распад, жадность галогенов
 
         if (SelfTest.Requested) labGo.AddComponent<SelfTest>();
+        else lab.LoadZone();               // в проверке начинаем с чистой зоны, иначе она увидит чужое
 
         lab.Say("Тяни элемент из таблицы слева в зону. Начни с водорода и кислорода.", new Color(0.8f, 0.9f, 1f));
     }

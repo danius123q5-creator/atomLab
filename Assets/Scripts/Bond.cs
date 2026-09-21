@@ -88,6 +88,21 @@ public class Bond : MonoBehaviour
         if (len < 1e-4f) return;
         Vector3 dir = d / len;
         float k = 18f * Order;
+        // 🔴 21.09, владелец: «при оттягивании частицы от связи он отрывается». Растянул
+        // вдвое сверх длины покоя — связь лопнула. Порог именно на длине, а не на силе: так
+        // разрыв видно глазом, и он случается ровно там, где игрок его тянул.
+        if (len > RestLength * 2.3f)
+        {
+            Vector3 mid = (A.transform.position + B.transform.position) * 0.5f;
+            Fx.Pop(0.55f);
+            Fx.Sparks(mid, new Color(1f, 0.6f, 0.4f), 18, 3.2f);
+            Fx.Flash(mid, new Color(1f, 0.6f, 0.4f), 2.5f, 4f, 0.2f);
+            var lab = Lab.I;
+            Break();
+            if (lab != null) lab.Recompute();
+            return;
+        }
+
         Vector3 f = dir * (len - RestLength) * k;
         A.Body.AddForce(f, ForceMode.Acceleration);
         B.Body.AddForce(-f, ForceMode.Acceleration);

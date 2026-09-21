@@ -93,6 +93,15 @@ public class Lab : MonoBehaviour
             if (Mathf.Abs(wheel) > 0.001f) camDist = Mathf.Clamp(camDist - wheel * 12f, 4f, 30f);
         }
 
+        // 🔴 21.09, владелец: на средней кнопке камера ходит свободно — тянешь, и вид едет
+        // за рукой, в плоскости экрана. Правая по-прежнему вертит, WASD двигает по полу.
+        if (Input.GetMouseButton(2) && !overPanel)
+        {
+            float k = camDist * 0.0016f;
+            camTarget -= Cam.transform.right * Input.GetAxisRaw("Mouse X") * 18f * k;
+            camTarget -= Cam.transform.up * Input.GetAxisRaw("Mouse Y") * 18f * k;
+        }
+
         float pan = 6f * Time.deltaTime;
         Vector3 fwd = Quaternion.Euler(0f, camYaw, 0f) * Vector3.forward;
         Vector3 right = Quaternion.Euler(0f, camYaw, 0f) * Vector3.right;
@@ -123,6 +132,9 @@ public class Lab : MonoBehaviour
     void Update()
     {
         bool overPanel = LabUI.I != null && LabUI.I.PointerOverUI;
+
+        saveTimer -= Time.deltaTime;
+        if (saveTimer <= 0f) { saveTimer = 8f; if (zoneDirty) SaveZone(); }
 
         // Shift + ЛКМ — оторвать все связи атома. Без этого собранное нельзя переделать,
         // а «занято» становилось тупиком: только выкинуть атом целиком.
@@ -338,7 +350,11 @@ public class Lab : MonoBehaviour
                 var b = list[j];
                 if (b.El.Valence == 0 && !GodMode) continue;
                 float dist = Vector3.Distance(a.transform.position, b.transform.position);
-                float touch = (a.El.Radius + b.El.Radius) * 1.25f;
+                // 🔴 21.09. С настоящими радиусами атомы стали вдвое мельче, и прежний
+                // множитель 1.25 требовал сводить их почти вплотную — вода переставала
+                // собираться вообще (поймала проверка: water=False). Тянемся дальше собственных
+                // размеров: связь возникает примерно на двух радиусах.
+                float touch = (a.El.Radius + b.El.Radius) * 1.9f;
 
                 var existing = a.BondWith(b);
                 if (existing != null)
@@ -385,6 +401,7 @@ public class Lab : MonoBehaviour
 
     public void Recompute()
     {
+        zoneDirty = true;
         Mols.Clear();
         var seen = new HashSet<Atom>();
         foreach (var start in Atom.All)
@@ -503,6 +520,81 @@ public class Lab : MonoBehaviour
             }
         }
     }
+
+
+    // ==================== сохранение зоны ====================
+
+    /// <summary>🔴 21.09, владелец: «добавь сохранения, чтоб не терять прогресс». Зона
+    /// пишется в файл: элементы с местами и связи с кратностями. Сохраняем сами — каждые
+    /// восемь секунд, если что-то менялось, и при выходе. Ручной кнопки нет нарочно: терялось
+    /// бы именно то, что забыли нажать.</summary>
+    string ZonePath { get { return System.IO.Path.Combine(Application.persistentDataPath, "zone.txt"); } }
+
+    float saveTimer = 8f;
+    bool zoneDirty;
+
+    public void MarkDirty() { zoneDirty = true; }
+
+    const char NL = (char)10;   // перенос строки в файле сохранения
+
+    public void SaveZone()
+    {
+        try
+        {
+            var list = Atom.All;
+            var sb = new System.Text.StringBuilder();
+            sb.Append("v1").Append(NL);
+            foreach (var a in list)
+                sb.Append("a ").Append(a.El.Sym).Append(' ')
+                  .Append(a.transform.position.x.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)).Append(' ')
+                  .Append(a.transform.position.y.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)).Append(' ')
+                  .Append(a.transform.position.z.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)).Append(NL);
+            foreach (var b in Bond.All)
+            {
+                int i = list.IndexOf(b.A), j = list.IndexOf(b.B);
+                if (i >= 0 && j >= 0) sb.Append("b ").Append(i).Append(' ').Append(j).Append(' ').Append(b.Order).Append(NL);
+            }
+            System.IO.File.WriteAllText(ZonePath, sb.ToString());
+            zoneDirty = false;
+        }
+        catch (System.Exception e) { Debug.LogWarning("Не вышло сохранить зону: " + e.Message); }
+    }
+
+    public void LoadZone()
+    {
+        try
+        {
+            if (!System.IO.File.Exists(ZonePath)) return;
+            var lines = System.IO.File.ReadAllLines(ZonePath);
+            var made = new List<Atom>();
+            foreach (var line in lines)
+            {
+                var p = line.Split(' ');
+                if (p.Length == 5 && p[0] == "a")
+                {
+                    var el = Elements.BySymbol(p[1]);
+                    if (el == null) continue;
+                    made.Add(Atom.Spawn(el, new Vector3(
+                        float.Parse(p[2], System.Globalization.CultureInfo.InvariantCulture),
+                        float.Parse(p[3], System.Globalization.CultureInfo.InvariantCulture),
+                        float.Parse(p[4], System.Globalization.CultureInfo.InvariantCulture))));
+                }
+                else if (p.Length == 4 && p[0] == "b")
+                {
+                    int i = int.Parse(p[1]), j = int.Parse(p[2]), o = int.Parse(p[3]);
+                    if (i >= 0 && i < made.Count && j >= 0 && j < made.Count) Bond.Create(made[i], made[j], o);
+                }
+            }
+            if (made.Count > 0)
+            {
+                Recompute();
+                Say("Зона восстановлена: " + made.Count + " атомов с прошлого раза.", new Color(0.8f, 0.95f, 1f));
+            }
+        }
+        catch (System.Exception e) { Debug.LogWarning("Не вышло прочитать зону: " + e.Message); }
+    }
+
+    void OnApplicationQuit() { SaveZone(); SaveProgress(); }
 
     // ==================== память между запусками ====================
 

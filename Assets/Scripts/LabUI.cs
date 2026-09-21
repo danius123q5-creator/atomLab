@@ -39,6 +39,8 @@ public class LabUI : MonoBehaviour
         get
         {
             if (carrying != null || drag == DragKind.Panel) return true;
+            if (menuAtom != null &&
+                MenuRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y))) return true;
             float mx = Input.mousePosition.x;
             return mx <= panelX + W + HandleW;
         }
@@ -114,11 +116,15 @@ public class LabUI : MonoBehaviour
         DrawHud();
         DrawFormulaCard();
         DrawZoneButtons();
+        DrawMenu();
         DrawCarry(e);
     }
 
     void HandleInput(Event e)
     {
+        if (e.type == EventType.MouseDown && e.button == 0 && menuAtom != null && !MenuRect.Contains(e.mousePosition))
+            CloseMenu();
+
         if (e.type == EventType.MouseDown && e.button == 0)
         {
             downPos = e.mousePosition;
@@ -162,8 +168,18 @@ public class LabUI : MonoBehaviour
             }
             else if (drag == DragKind.Scroll && d.magnitude < 10f && candidate != null && Lab.I != null)
             {
-                // Простой тык по клетке — атом падает в центр зоны.
-                Lab.I.SpawnFromTable(candidate, new Vector3(Screen.width * 0.6f, Screen.height * 0.55f, 0f));
+                if (replaceTarget != null)
+                {
+                    // Ждали выбора элемента для замены — значит, клетка меняет атом, а не родит новый.
+                    string was = replaceTarget.El.Sym;
+                    replaceTarget.Become(candidate);
+                    Fx.Pop(1.2f);
+                    Fx.Sparks(replaceTarget.transform.position, new Color(0.8f, 0.95f, 1f), 25, 3f);
+                    Lab.I.Recompute();
+                    Lab.I.Say(was + " стал " + candidate.Sym + " (" + candidate.Name + ").", new Color(0.85f, 0.95f, 1f));
+                    replaceTarget = null;
+                }
+                else Lab.I.SpawnFromTable(candidate, new Vector3(Screen.width * 0.6f, Screen.height * 0.55f, 0f));
             }
             drag = DragKind.None; carrying = null; candidate = null;
         }
@@ -487,6 +503,123 @@ public class LabUI : MonoBehaviour
             GUI.Label(new Rect(x, y - 20f, 520f, 18f),
                 "Выделено: " + lab.Selected.Count + "   ·   в буфере: " + lab.ClipboardCount +
                 "   ·   Ctrl+C копировать, Ctrl+V (Ctrl+М) вставить, Ctrl+A выделить всё", sSmall);
+    }
+
+
+    // ==================== меню атома (ПКМ) ====================
+
+    Atom menuAtom;                 // на каком атоме открыто меню
+    Vector2 menuPos;               // левый верхний угол меню, координаты GUI
+    bool menuBondList;             // раскрыт ли список «убрать связь с...»
+    Atom replaceTarget;            // кого меняем, когда ждём выбора элемента в таблице
+
+    public void OpenMenu(Atom a, Vector3 screenPos)
+    {
+        menuAtom = a;
+        menuBondList = false;
+        menuPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
+    }
+
+    public void CloseMenu() { menuAtom = null; menuBondList = false; }
+
+    Rect MenuRect
+    {
+        get
+        {
+            if (menuAtom == null) return new Rect();
+            int rows = 6 + (menuBondList ? menuAtom.Bonds.Count : 0);
+            float w = 260f, h = 26f + rows * 24f;
+            float x = Mathf.Min(menuPos.x, Screen.width - w - 6f);
+            float y = Mathf.Min(menuPos.y, Screen.height - h - 6f);
+            return new Rect(x, y, w, h);
+        }
+    }
+
+    /// <summary>Меню атома: разорвать одну связь, все связи, удалить, заменить элемент,
+    /// провести реакцию. 🔴 21.09, просьба владельца.</summary>
+    void DrawMenu()
+    {
+        if (menuAtom == null) return;
+        if (menuAtom == null || menuAtom.El == null) { CloseMenu(); return; }
+
+        var r = MenuRect;
+        GUI.color = new Color(0.07f, 0.09f, 0.14f, 0.97f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(0.4f, 0.7f, 1f, 0.8f);
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 2f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        float y = r.y + 4f;
+        int used = 0;
+        foreach (var b in menuAtom.Bonds) used += b.Order;
+        GUI.Label(new Rect(r.x + 8f, y, r.width - 16f, 20f),
+            menuAtom.El.Name + " (" + menuAtom.El.Sym + ")   связей " + used + " из " + menuAtom.El.Valence, sSmall);
+        y += 22f;
+
+        if (menuAtom.Bonds.Count > 0)
+        {
+            if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f),
+                (menuBondList ? "- " : "+ ") + "Убрать связь с...", sTab)) menuBondList = !menuBondList;
+            y += 24f;
+
+            if (menuBondList)
+            {
+                foreach (var b in new List<Bond>(menuAtom.Bonds))
+                {
+                    var other = b.Other(menuAtom);
+                    string kind = b.Order == 1 ? "одинарная" : (b.Order == 2 ? "двойная" : "тройная");
+                    if (GUI.Button(new Rect(r.x + 18f, y, r.width - 24f, 22f),
+                        "с " + other.El.Sym + " (" + kind + ")", sTab))
+                    {
+                        b.Break();
+                        Lab.I.Recompute();
+                        Lab.I.Say("Связь " + menuAtom.El.Sym + "-" + other.El.Sym + " разорвана.", new Color(1f, 0.85f, 0.6f));
+                        if (menuAtom.Bonds.Count == 0) menuBondList = false;
+                    }
+                    y += 24f;
+                }
+            }
+
+            if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Убрать все связи", sTab))
+            {
+                int n = menuAtom.Bonds.Count;
+                for (int i = menuAtom.Bonds.Count - 1; i >= 0; i--) menuAtom.Bonds[i].Break();
+                Lab.I.Recompute();
+                Lab.I.Say("Оторвано связей: " + n, new Color(1f, 0.85f, 0.6f));
+                CloseMenu();
+                return;
+            }
+            y += 24f;
+        }
+        else { GUI.Label(new Rect(r.x + 8f, y, r.width - 16f, 20f), "связей нет", sNote); y += 46f; }
+
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Удалить атом", sTab))
+        {
+            menuAtom.Despawn();
+            Lab.I.Recompute();
+            CloseMenu();
+            return;
+        }
+        y += 24f;
+
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Заменить (выбери в таблице)", sTab))
+        {
+            replaceTarget = menuAtom;
+            showPresets = false;
+            open = true;
+            Lab.I.Say("Выбери элемент в таблице - " + menuAtom.El.Sym + " станет им. Связи, на которые не хватит запаса, оторвутся.",
+                new Color(0.85f, 0.95f, 1f));
+            CloseMenu();
+            return;
+        }
+        y += 24f;
+
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Провести реакцию", sTab))
+        {
+            CloseMenu();
+            Chemistry.React();
+            return;
+        }
     }
 
     void DrawCarry(Event e)

@@ -62,6 +62,32 @@ public class Atom : MonoBehaviour
         return a;
     }
 
+    /// <summary>Стать другим элементом: размер, цвет и масса меняются на месте. Связи, на
+    /// которые нового запаса не хватает, рвутся — сначала самые длинные, они «держатся хуже».
+    /// Нужно и для распада, и для пункта «Заменить» в меню атома.</summary>
+    public void Become(Elements.El el)
+    {
+        El = el;
+        float d = el.Radius * 2f;
+        transform.localScale = new Vector3(d, d, d);
+        Rend.sharedMaterial = LabMaterials.Atom(el.Color);
+        Body.mass = Mathf.Max(0.2f, el.Mass / 40f);
+
+        while (Bonds.Count > 0)
+        {
+            int used = 0;
+            for (int i = 0; i < Bonds.Count; i++) used += Bonds[i].Order;
+            if (used <= el.Valence) break;
+            int worst = 0; float far = -1f;
+            for (int i = 0; i < Bonds.Count; i++)
+            {
+                float len = Vector3.Distance(Bonds[i].A.transform.position, Bonds[i].B.transform.position);
+                if (len > far) { far = len; worst = i; }
+            }
+            Bonds[worst].Break();
+        }
+    }
+
     public void Despawn()
     {
         for (int i = Bonds.Count - 1; i >= 0; i--) Bonds[i].Break();
