@@ -30,6 +30,18 @@ public class Lab : MonoBehaviour
     Atom dragged;
     float dragDepth;
 
+    // ——— выделение рамкой и буфер обмена (🔴 21.09, владелец: «выделятор как в виндовс») ———
+    public readonly HashSet<Atom> Selected = new HashSet<Atom>();
+    public bool Banding;                 // тянем рамку прямо сейчас
+    public Vector2 BandA, BandB;         // углы рамки в экранных координатах (снизу вверх)
+
+    class ClipAtom { public string Sym; public Vector3 Rel; }
+    class ClipBond { public int A, B, Order; }
+    List<ClipAtom> clipAtoms;
+    List<ClipBond> clipBonds;
+
+    public int ClipboardCount { get { return clipAtoms == null ? 0 : clipAtoms.Count; } }
+
     // ——— что собралось ———
     public class Mol
     {
@@ -135,8 +147,19 @@ public class Lab : MonoBehaviour
                 dragged = a;
                 dragDepth = Cam.WorldToScreenPoint(a.transform.position).z;
             }
+            else
+            {
+                // Промах по атому — значит, тянем рамку выделения, как в проводнике.
+                Banding = true;
+                BandA = BandB = Input.mousePosition;
+            }
         }
-        if (Input.GetMouseButtonUp(0)) dragged = null;
+        if (Banding) BandB = Input.mousePosition;
+        if (Input.GetMouseButtonUp(0))
+        {
+            if (Banding) { Banding = false; ApplyBand(); }
+            dragged = null;
+        }
 
         if (dragged != null)
         {
@@ -158,7 +181,15 @@ public class Lab : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Delete) && !overPanel)
         {
             var victim = dragged != null ? dragged : PickAtom(Input.mousePosition);
-            if (victim != null)
+            if (victim == null && Selected.Count > 0)
+            {
+                int n = Selected.Count;
+                foreach (var a in new List<Atom>(Selected)) a.Despawn();
+                Selected.Clear();
+                Recompute();
+                Say("Убрано выделенных атомов: " + n, new Color(0.9f, 0.9f, 0.9f));
+            }
+            else if (victim != null)
             {
                 string sym = victim.El.Sym;
                 if (dragged == victim) dragged = null;
@@ -169,6 +200,18 @@ public class Lab : MonoBehaviour
             else Say("Наведи на атом и нажми Del — уберётся он один.", new Color(0.9f, 0.9f, 0.7f));
         }
         if (Input.GetKeyDown(KeyCode.Escape) && LabUI.I != null) LabUI.I.TogglePanel();
+
+        // Ctrl+C копирует выделенное, Ctrl+V вставляет. Ctrl+M — то же самое: на русской
+        // раскладке клавиша V печатает «м», и владелец назвал её так, как она подписана.
+        bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+        if (ctrl && Input.GetKeyDown(KeyCode.C)) CopySelection();
+        if (ctrl && (Input.GetKeyDown(KeyCode.V) || Input.GetKeyDown(KeyCode.M))) PasteClipboard();
+        if (ctrl && Input.GetKeyDown(KeyCode.A))
+        {
+            Selected.Clear();
+            foreach (var a in Atom.All) Selected.Add(a);
+            Say("Выделено всё: " + Selected.Count + " атомов.", new Color(0.8f, 0.95f, 1f));
+        }
     }
 
     public Atom PickAtom(Vector3 screenPos)
@@ -204,20 +247,80 @@ public class Lab : MonoBehaviour
         return a;
     }
 
-    /// <summary>Перезапуск: зона пустеет, камера возвращается в начальное положение.
-    /// Журнал открытий и очки НЕ трогаем — их чистит отдельная кнопка, чтобы случайный
-    /// «перезапуск» не стирал то, что собирали час.</summary>
-    public void RestartLab()
-    {
-        ClearZone();
-        camYaw = 20f; camPitch = 14f; camDist = 14f; camTarget = ZoneCenter;
-        Say("Лаборатория перезапущена. Журнал открытий на месте.", new Color(0.8f, 0.9f, 1f));
-    }
-
     public void ClearZone()
     {
         for (int i = Atom.All.Count - 1; i >= 0; i--) Atom.All[i].Despawn();
         Recompute();
+    }
+
+
+    // ==================== выделение и буфер ====================
+
+    /// <summary>Что попало в рамку. Считаем по ЭКРАНУ, а не по объёму: рамка плоская, и
+    /// игрок выделяет то, что видит, даже если атомы стоят на разной глубине.</summary>
+    void ApplyBand()
+    {
+        var r = Rect.MinMaxRect(Mathf.Min(BandA.x, BandB.x), Mathf.Min(BandA.y, BandB.y),
+                                Mathf.Max(BandA.x, BandB.x), Mathf.Max(BandA.y, BandB.y));
+        if (r.width < 6f && r.height < 6f) { Selected.Clear(); return; }   // просто щелчок — снять выделение
+
+        if (!Input.GetKey(KeyCode.LeftShift)) Selected.Clear();            // Shift добавляет к выделенному
+        foreach (var a in Atom.All)
+        {
+            Vector3 sp = Cam.WorldToScreenPoint(a.transform.position);
+            if (sp.z > 0f && r.Contains(new Vector2(sp.x, sp.y))) Selected.Add(a);
+        }
+        Say("Выделено атомов: " + Selected.Count + ". Ctrl+C — копировать, Ctrl+V — вставить.",
+            new Color(0.8f, 0.95f, 1f));
+    }
+
+    public void CopySelection()
+    {
+        if (Selected.Count == 0) { Say("Сначала выдели атомы рамкой.", new Color(1f, 0.9f, 0.7f)); return; }
+
+        var list = new List<Atom>(Selected);
+        Vector3 c = Vector3.zero;
+        foreach (var a in list) c += a.transform.position;
+        c /= list.Count;
+
+        clipAtoms = new List<ClipAtom>();
+        foreach (var a in list) clipAtoms.Add(new ClipAtom { Sym = a.El.Sym, Rel = a.transform.position - c });
+
+        // Связи копируем ТОЛЬКО внутри выделения: связь наружу копировать некуда.
+        clipBonds = new List<ClipBond>();
+        foreach (var b in Bond.All)
+        {
+            int i = list.IndexOf(b.A), j = list.IndexOf(b.B);
+            if (i >= 0 && j >= 0) clipBonds.Add(new ClipBond { A = i, B = j, Order = b.Order });
+        }
+        Say("Скопировано: " + clipAtoms.Count + " атомов и " + clipBonds.Count + " связей.",
+            new Color(0.8f, 0.95f, 1f));
+    }
+
+    public void PasteClipboard()
+    {
+        if (clipAtoms == null || clipAtoms.Count == 0) { Say("Буфер пуст: сначала Ctrl+C.", new Color(1f, 0.9f, 0.7f)); return; }
+
+        Vector3 c = ZoneCenter + new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-0.8f, 0.8f), Random.Range(-1f, 1f));
+        var made = new List<Atom>();
+        foreach (var ca in clipAtoms) made.Add(Atom.Spawn(Elements.BySymbol(ca.Sym), c + ca.Rel));
+        foreach (var cb in clipBonds) Bond.Create(made[cb.A], made[cb.B], cb.Order);
+
+        Selected.Clear();
+        foreach (var a in made) Selected.Add(a);
+        Fx.Pop(1.1f);
+        Fx.Sparks(c, new Color(0.7f, 0.95f, 1f), 25, 3f);
+        Recompute();
+        Say("Вставлено: " + made.Count + " атомов. Копия выделена — можно сразу оттащить.",
+            new Color(0.8f, 0.95f, 1f));
+    }
+
+    /// <summary>Выход из игры. В редакторе Unity Application.Quit ничего не делает, поэтому
+    /// там просто говорим об этом вслух, а не делаем вид, что вышли.</summary>
+    public void ExitGame()
+    {
+        Say("Выходим...", Color.white);
+        Application.Quit();
     }
 
     // ==================== склейка ====================

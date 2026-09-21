@@ -98,6 +98,25 @@ public class SelfTest : MonoBehaviour
         lab.ClearZone();
         Debug.Log("SELFTEST presets bad=" + bad + " of " + Presets.All.Length);
 
+        // Пятый случай: «посмотреть реакцию». Кладём в зону сырьё на этанол плюс лишнего —
+        // и смотрим, ЧТО движок из этого собрал и не завис ли он.
+        lab.ClearZone();
+        yield return new WaitForSeconds(0.2f);
+        for (int i = 0; i < 2; i++) Atom.Spawn(Elements.BySymbol("C"), c + new Vector3(-2.5f + i, 1.5f, 0f));
+        for (int i = 0; i < 6; i++) Atom.Spawn(Elements.BySymbol("H"), c + new Vector3(-2f + i * 0.9f, -1.5f, 1f));
+        Atom.Spawn(Elements.BySymbol("O"), c + new Vector3(2.5f, 1.5f, -1f));
+        Atom.Spawn(Elements.BySymbol("Na"), c + new Vector3(3.2f, -1.5f, 1.2f));
+        yield return new WaitForSeconds(0.4f);
+        float t0 = Time.realtimeSinceStartup;
+        Chemistry.React();
+        float ms = (Time.realtimeSinceStartup - t0) * 1000f;
+        yield return new WaitForSeconds(0.5f);
+        lab.Recompute();
+        string res = "";
+        foreach (var m in lab.Mols) res += m.Formula + "(" + m.Atoms.Count + ") ";
+        Debug.Log("SELFTEST react: " + res.Trim() + "   time=" + ms.ToString("0.0") + " ms");
+        lab.ClearZone();
+
         Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone);
         if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0) ? 0 : 2);
     }

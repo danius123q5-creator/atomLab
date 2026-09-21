@@ -109,6 +109,7 @@ public class LabUI : MonoBehaviour
         HandleInput(e);
 
         DrawWorldLabels();
+        DrawSelection();
         DrawPanel(cw, ch);
         DrawHud();
         DrawFormulaCard();
@@ -349,6 +350,49 @@ public class LabUI : MonoBehaviour
         }
     }
 
+
+    /// <summary>Рамка выделения и уголки на выделенных атомах. Рисуются поверх сцены: своей
+    /// подсветки у шарика нет, а красить материал — значит терять его настоящий цвет.</summary>
+    void DrawSelection()
+    {
+        var lab = Lab.I;
+        var cam = lab != null ? lab.Cam : null;
+        if (cam == null) return;
+
+        foreach (var a in lab.Selected)
+        {
+            if (a == null) continue;
+            Vector3 sp = cam.WorldToScreenPoint(a.transform.position);
+            if (sp.z <= 0f) continue;
+            float y = Screen.height - sp.y;
+            float r = 26f;
+            GUI.color = new Color(0.4f, 0.9f, 1f, 0.95f);
+            // Четыре уголка, а не рамка целиком: так видно и атом, и то, что он выбран.
+            foreach (var corner in new[] { new Vector2(-1, -1), new Vector2(1, -1), new Vector2(-1, 1), new Vector2(1, 1) })
+            {
+                float cx = sp.x + corner.x * r, cy = y + corner.y * r;
+                GUI.DrawTexture(new Rect(cx - (corner.x > 0 ? 9f : 0f), cy - 1f, 9f, 2f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(cx - 1f, cy - (corner.y > 0 ? 9f : 0f), 2f, 9f), Texture2D.whiteTexture);
+            }
+            GUI.color = Color.white;
+        }
+
+        if (lab.Banding)
+        {
+            var r = Rect.MinMaxRect(
+                Mathf.Min(lab.BandA.x, lab.BandB.x), Screen.height - Mathf.Max(lab.BandA.y, lab.BandB.y),
+                Mathf.Max(lab.BandA.x, lab.BandB.x), Screen.height - Mathf.Min(lab.BandA.y, lab.BandB.y));
+            GUI.color = new Color(0.4f, 0.8f, 1f, 0.18f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = new Color(0.5f, 0.9f, 1f, 0.9f);
+            GUI.DrawTexture(new Rect(r.x, r.y, r.width, 1f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.x, r.yMax - 1f, r.width, 1f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.x, r.y, 1f, r.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(r.xMax - 1f, r.y, 1f, r.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+    }
+
     void DrawHud()
     {
         var lab = Lab.I;
@@ -432,7 +476,17 @@ public class LabUI : MonoBehaviour
         float y = Screen.height - cardHeight - 20f - 34f;
 
         if (GUI.Button(new Rect(x, y, 140f, 28f), "Убрать атомы", sTab)) lab.ClearZone();
-        if (GUI.Button(new Rect(x + 148f, y, 140f, 28f), "Перезапуск", sTab)) lab.RestartLab();
+
+        GUI.color = new Color(0.75f, 1f, 0.8f);
+        if (GUI.Button(new Rect(x + 148f, y, 180f, 28f), "Посмотреть реакцию", sTab)) Chemistry.React();
+        GUI.color = new Color(1f, 0.8f, 0.8f);
+        if (GUI.Button(new Rect(x + 336f, y, 140f, 28f), "Выход из игры", sTab)) lab.ExitGame();
+        GUI.color = Color.white;
+
+        if (lab.Selected.Count > 0 || lab.ClipboardCount > 0)
+            GUI.Label(new Rect(x, y - 20f, 520f, 18f),
+                "Выделено: " + lab.Selected.Count + "   ·   в буфере: " + lab.ClipboardCount +
+                "   ·   Ctrl+C копировать, Ctrl+V (Ctrl+М) вставить, Ctrl+A выделить всё", sSmall);
     }
 
     void DrawCarry(Event e)

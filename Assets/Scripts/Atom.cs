@@ -66,6 +66,7 @@ public class Atom : MonoBehaviour
     {
         for (int i = Bonds.Count - 1; i >= 0; i--) Bonds[i].Break();
         All.Remove(this);
+        if (Lab.I != null) Lab.I.Selected.Remove(this);   // иначе в выделении остаются призраки
         Destroy(gameObject);
     }
 
