@@ -83,7 +83,14 @@ public class LabUI : MonoBehaviour
     {
         float cw = CellW, ch = cw * 1.12f;
         int row, col;
-        if (e.Class == Elements.Cls.Lanth) { row = 8; col = e.Z - 57 + 2; }
+        if (e.Synthetic)
+        {
+            // Добытые в ускорителе стоят своим рядом внизу, по порядку появления.
+            int idx = 0;
+            foreach (var x in Elements.All) { if (x == e) break; if (x.Synthetic) idx++; }
+            row = 11 + idx / 18; col = idx % 18;
+        }
+        else if (e.Class == Elements.Cls.Lanth) { row = 8; col = e.Z - 57 + 2; }
         else if (e.Class == Elements.Cls.Actin) { row = 9; col = e.Z - 89 + 2; }
         else { row = e.Period - 1; col = e.Group - 1; }
         return new Rect(panelX + 13f + col * cw, tableTop + row * ch - scroll, cw - 2f, ch - 2f);
@@ -105,7 +112,7 @@ public class LabUI : MonoBehaviour
         Styles();
         var e = Event.current;
         float cw = CellW, ch = cw * 1.12f;
-        tableTop = 178f;
+        tableTop = 210f;
         scrollMax = Mathf.Max(0f, (10f * ch + 40f) - (Screen.height - tableTop - 8f));
 
         HandleInput(e);
@@ -116,6 +123,7 @@ public class LabUI : MonoBehaviour
         DrawHud();
         DrawFormulaCard();
         DrawZoneButtons();
+        DrawAccelerator();
         DrawMenu();
         DrawCarry(e);
     }
@@ -168,7 +176,12 @@ public class LabUI : MonoBehaviour
             }
             else if (drag == DragKind.Scroll && d.magnitude < 10f && candidate != null && Lab.I != null)
             {
-                if (replaceTarget != null)
+                if (pendingSlot >= 0 && Accelerator.I != null)
+                {
+                    Accelerator.I.Put(pendingSlot, candidate);
+                    pendingSlot = -1;
+                }
+                else if (replaceTarget != null)
                 {
                     // Ждали выбора элемента для замены — значит, клетка меняет атом, а не родит новый.
                     string was = replaceTarget.El.Sym;
@@ -223,6 +236,12 @@ public class LabUI : MonoBehaviour
                 : "Обычный режим: работают валентность и правило благородных газов.",
                 Lab.GodMode ? new Color(1f, 0.85f, 0.4f) : new Color(0.8f, 0.9f, 1f));
         }
+        GUI.color = Color.white;
+
+        GUI.color = accelOn ? new Color(0.5f, 0.9f, 1f) : Color.white;
+        if (GUI.Button(new Rect(panelX + 14f, 138f, W - 28f, 26f),
+            accelOn ? "← выйти из ускорителя" : "Ускоритель частиц (склеить ядра)", sTab))
+            ToggleAccelerator();
         GUI.color = Color.white;
 
         if (GUI.Button(new Rect(panelX + 14f, 106f, W - 28f, 26f),
@@ -284,14 +303,14 @@ public class LabUI : MonoBehaviour
         var h = hover ?? carrying;
         if (h != null)
         {
-            GUI.Label(new Rect(panelX + 14f, 136f, W - 28f, 44f),
+            GUI.Label(new Rect(panelX + 14f, 168f, W - 28f, 44f),
                 h.Z + ". " + h.Name + " (" + h.Sym + ")   масса " + h.Mass.ToString("0.###") +
                 "   связей: " + h.Valence + (h.EN > 0f ? "   ЭО " + h.EN.ToString("0.00") : "") +
                 "\n" + h.ClassName + "  ·  " + h.PaintName, sSmall);
         }
         else
         {
-            DrawLegend(new Rect(panelX + 14f, 136f, W - 28f, 44f));
+            DrawLegend(new Rect(panelX + 14f, 168f, W - 28f, 44f));
         }
 
         foreach (var el in Elements.All)
@@ -487,6 +506,7 @@ public class LabUI : MonoBehaviour
         var lab = Lab.I;
         if (lab == null) return;
 
+        if (accelOn) return;              // в ускорителе внизу стоит его пульт
         float x = PanelRightPx + 20f;
         if (Screen.width - x < 200f) return;
         float y = Screen.height - cardHeight - 20f - 34f;
@@ -620,6 +640,84 @@ public class LabUI : MonoBehaviour
             Chemistry.React();
             return;
         }
+    }
+
+
+    // ==================== ускоритель ====================
+
+    bool accelOn;
+    int pendingSlot = -1;          // в какое гнездо ждём элемент из таблицы: 0 левое, 1 правое
+
+    void ToggleAccelerator()
+    {
+        var acc = Accelerator.I;
+        if (acc == null || Lab.I == null) return;
+        accelOn = !accelOn;
+        acc.Active = accelOn;
+        pendingSlot = -1;
+        if (accelOn)
+        {
+            Lab.I.LookAt(Accelerator.Rig, 13f);
+            Lab.I.Say("Ускоритель. Щёлкни по гнезду, потом по элементу в таблице — и жми «Склеить вещества».",
+                new Color(0.6f, 0.9f, 1f));
+        }
+        else
+        {
+            Lab.I.LookAt(Lab.ZoneCenter, 14f);
+            Lab.I.Say("Назад в лабораторию.", new Color(0.8f, 0.9f, 1f));
+        }
+    }
+
+    /// <summary>Пульт ускорителя: два гнезда, результат и кнопка склейки.</summary>
+    void DrawAccelerator()
+    {
+        if (!accelOn) return;
+        var acc = Accelerator.I;
+        if (acc == null) return;
+
+        float x = PanelRightPx + 20f;
+        float w = Mathf.Min(560f, Screen.width - x - 20f);
+        if (w < 260f) return;
+        var r = new Rect(x, Screen.height - 176f, w, 156f);
+
+        GUI.color = new Color(0f, 0f, 0f, 0.62f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(0.4f, 0.8f, 1f, 0.9f);
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), "УСКОРИТЕЛЬ ЧАСТИЦ", sTitle);
+        GUI.Label(new Rect(r.x + 12f, r.y + 28f, r.width - 24f, 20f),
+            "Ядра складываются: номер нового элемента — сумма номеров. Так и получили всё тяжелее урана.", sSmall);
+
+        float bw = (r.width - 36f) / 3f;
+        DrawSlotButton(new Rect(r.x + 12f, r.y + 52f, bw, 40f), 0, acc.SlotA, "гнездо слева");
+        DrawSlotButton(new Rect(r.x + 18f + bw, r.y + 52f, bw, 40f), -1, acc.Result, "результат");
+        DrawSlotButton(new Rect(r.x + 24f + bw * 2f, r.y + 52f, bw, 40f), 1, acc.SlotB, "гнездо справа");
+
+        GUI.color = new Color(0.6f, 0.95f, 1f);
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 100f, bw * 1.6f, 30f), "Склеить вещества", sTab)) acc.Fuse();
+        GUI.color = Color.white;
+        if (acc.Result != null && GUI.Button(new Rect(r.x + 24f + bw * 1.6f, r.y + 100f, bw * 1.3f, 30f), "Забрать в зону", sTab))
+            acc.TakeResult();
+
+        if (pendingSlot >= 0)
+            GUI.Label(new Rect(r.x + 12f, r.y + 132f, r.width - 24f, 20f),
+                "Теперь выбери элемент в таблице слева — он встанет в гнездо.", sNote);
+    }
+
+    void DrawSlotButton(Rect r, int slot, Elements.El el, string title)
+    {
+        bool waiting = (slot >= 0 && pendingSlot == slot);
+        GUI.color = waiting ? new Color(1f, 0.9f, 0.5f) : (el != null ? el.PaintColor : new Color(0.5f, 0.5f, 0.55f));
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        string text = el != null ? el.Sym + "  " + el.Name + "  (" + el.Z + ")" : "пусто";
+        GUI.Label(new Rect(r.x + 8f, r.y + 2f, r.width - 12f, 18f), title, sSmall);
+        GUI.Label(new Rect(r.x + 8f, r.y + 18f, r.width - 12f, 20f), text, sSmall);
+
+        if (slot >= 0 && GUI.Button(r, "", GUIStyle.none)) pendingSlot = (pendingSlot == slot) ? -1 : slot;
     }
 
     void DrawCarry(Event e)

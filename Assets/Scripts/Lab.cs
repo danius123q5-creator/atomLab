@@ -25,6 +25,7 @@ public class Lab : MonoBehaviour
     public Camera Cam;
     float camYaw = 20f, camPitch = 14f, camDist = 14f;
     Vector3 camTarget = ZoneCenter;
+    Vector3 viewCenter = ZoneCenter;     // вокруг чего сейчас крутится камера: зона или ускоритель
 
     // ——— перетаскивание атома мышью/пальцем ———
     Atom dragged;
@@ -110,9 +111,9 @@ public class Lab : MonoBehaviour
         if (Input.GetKey(KeyCode.D)) camTarget += right * pan;
         if (Input.GetKey(KeyCode.A)) camTarget -= right * pan;
         camTarget = new Vector3(
-            Mathf.Clamp(camTarget.x, ZoneCenter.x - 4f, ZoneCenter.x + 4f),
-            Mathf.Clamp(camTarget.y, 0.5f, 4f),
-            Mathf.Clamp(camTarget.z, ZoneCenter.z - 4f, ZoneCenter.z + 4f));
+            Mathf.Clamp(camTarget.x, viewCenter.x - 5f, viewCenter.x + 5f),
+            Mathf.Clamp(camTarget.y, viewCenter.y - 3f, viewCenter.y + 3f),
+            Mathf.Clamp(camTarget.z, viewCenter.z - 5f, viewCenter.z + 5f));
 
         Quaternion rot = Quaternion.Euler(camPitch, camYaw, 0f);
         Cam.transform.position = camTarget - rot * Vector3.forward * camDist;
@@ -224,6 +225,17 @@ public class Lab : MonoBehaviour
             foreach (var a in Atom.All) Selected.Add(a);
             Say("Выделено всё: " + Selected.Count + " атомов.", new Color(0.8f, 0.95f, 1f));
         }
+    }
+
+    /// <summary>Переезд камеры к ускорителю и обратно. Стенд стоит поодаль, поэтому это
+    /// именно смена места, а не другой угол обзора.</summary>
+    public void LookAt(Vector3 center, float dist)
+    {
+        viewCenter = center;
+        camTarget = center;
+        camDist = dist;
+        camPitch = 10f;
+        camYaw = 0f;
     }
 
     public Atom PickAtom(Vector3 screenPos)

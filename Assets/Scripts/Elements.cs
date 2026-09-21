@@ -21,7 +21,7 @@ public static class Elements
     /// неметаллы, зелёный радиоактивные, жёлтый — те, о которых толком ничего не известно.
     /// Порядок проверки важен: сверхтяжёлые элементы и радиоактивны, и неизучены, поэтому
     /// «неизвестный» перебивает «радиацию», иначе жёлтого в таблице не было бы совсем.</summary>
-    public enum Paint { Metal, Nonmetal, Radioactive, Unknown }
+    public enum Paint { Metal, Nonmetal, Radioactive, Unknown, Synthetic }
 
     public class El
     {
@@ -34,6 +34,10 @@ public static class Elements
         public Color Color;
         public Cls Class;
 
+        /// <summary>Добыт в ускорителе, а не выдан таблицей. Такие клетки голубые и стоят
+        /// отдельным рядом под таблицей.</summary>
+        public bool Synthetic;
+
         /// <summary>Радиус шарика — от НАСТОЯЩЕГО ковалентного радиуса элемента (таблица
         /// Кордеро, пикометры), а не от номера строки.
         ///
@@ -44,7 +48,16 @@ public static class Elements
         public float Radius { get { return 0.14f + CovalentPm / 400f; } }
 
         /// <summary>Ковалентный радиус в пикометрах. Величина настоящая, измеренная.</summary>
-        public float CovalentPm { get { return COV[Z - 1]; } }
+        public float CovalentPm
+        {
+            get
+            {
+                if (Z >= 1 && Z <= COV.Length) return COV[Z - 1];
+                // Для добытых в ускорителе радиуса не существует: элемент выдуман. Берём
+                // продолжение ряда сверхтяжёлых и честно называем это оценкой.
+                return 160f + (Z - COV.Length) * 1.5f;
+            }
+        }
 
         /// <summary>Радиоактивны: технеций (43), прометий (61) и всё от полония (84) и дальше —
         /// у этих элементов нет ни одного стабильного изотопа. Это не приблизительно, это
@@ -53,6 +66,7 @@ public static class Elements
         {
             get
             {
+                if (Synthetic) return Elements.Paint.Synthetic;
                 if (Z >= 104) return Elements.Paint.Unknown;
                 if (Z == 43 || Z == 61 || Z >= 84) return Elements.Paint.Radioactive;
                 switch (Class)
@@ -77,6 +91,7 @@ public static class Elements
                     case Elements.Paint.Metal: return new Color(0.82f, 0.20f, 0.22f);
                     case Elements.Paint.Nonmetal: return new Color(0.20f, 0.45f, 0.88f);
                     case Elements.Paint.Radioactive: return new Color(0.20f, 0.72f, 0.32f);
+                    case Elements.Paint.Synthetic: return new Color(0.35f, 0.80f, 1.00f);
                     default: return new Color(0.92f, 0.80f, 0.18f);
                 }
             }
@@ -91,6 +106,7 @@ public static class Elements
                     case Elements.Paint.Metal: return "металл";
                     case Elements.Paint.Nonmetal: return "неметалл";
                     case Elements.Paint.Radioactive: return "радиоактивный";
+                    case Elements.Paint.Synthetic: return "синтезирован в ускорителе";
                     default: return "неизученный";
                 }
             }
@@ -274,6 +290,67 @@ public static class Elements
     {
         if (_all == null) Parse();
         return (z >= 1 && z <= _all.Length) ? _all[z - 1] : null;
+    }
+
+    /// <summary>Записать в таблицу элемент, склеенный в ускорителе. 🔴 21.09, владелец:
+    /// «ускоритель склеивает частицы и сохраняет их в таблицу Менделеева под голубым цветом».
+    ///
+    /// Имя и символ строятся по НАСТОЯЩЕМУ правилу ИЮПАК для ещё не названных элементов: имя
+    /// читается по цифрам номера (ун-ун-энний для 119), символ — первые буквы этих корней.
+    /// Так в учебниках и стоят элементы, которым имя ещё не дали.</summary>
+    public static El AddSynthetic(int z, float mass)
+    {
+        if (_all == null) Parse();
+        var exist = ByZ(z);
+        if (exist != null) return exist;
+
+        string name = SystematicName(z);
+        string sym = SystematicSymbol(z);
+        while (_bySym.ContainsKey(sym)) sym += "x";
+
+        var el = new El
+        {
+            Z = z,
+            Sym = sym,
+            Name = name,
+            Mass = mass,
+            Group = 0,
+            Period = 8,
+            Valence = 4,              // неизвестна: берём четыре, чтобы элемент был на что-то годен
+            EN = 0f,
+            Color = new Color(0.35f, 0.80f, 1.00f),
+            Class = Cls.Actin,
+            Synthetic = true,
+        };
+
+        var list = new List<El>(_all);
+        list.Add(el);
+        list.Sort((x, y) => x.Z.CompareTo(y.Z));
+        _all = list.ToArray();
+        _bySym[sym] = el;
+        return el;
+    }
+
+    static readonly string[] ROOT_RU = { "нил", "ун", "би", "три", "квад", "пент", "гекс", "септ", "окт", "энн" };
+    static readonly string[] ROOT_LAT = { "n", "u", "b", "t", "q", "p", "h", "s", "o", "e" };
+
+    public static string SystematicName(int z)
+    {
+        string digits = z.ToString();
+        var sb = new System.Text.StringBuilder();
+        foreach (char c in digits) sb.Append(ROOT_RU[c - '0']);
+        sb.Append("ий");
+        string s0 = sb.ToString();
+        return char.ToUpper(s0[0]) + s0.Substring(1);
+    }
+
+    public static string SystematicSymbol(int z)
+    {
+        string digits = z.ToString();
+        var sb = new System.Text.StringBuilder();
+        foreach (char c in digits) sb.Append(ROOT_LAT[c - '0']);
+        string s0 = sb.ToString();
+        return char.ToUpper(s0[0]) + s0.Substring(1);
     }
 
     static void Parse()

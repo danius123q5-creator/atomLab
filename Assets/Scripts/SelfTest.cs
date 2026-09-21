@@ -117,7 +117,34 @@ public class SelfTest : MonoBehaviour
         Debug.Log("SELFTEST react: " + res.Trim() + "   time=" + ms.ToString("0.0") + " ms");
         lab.ClearZone();
 
-        Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone);
-        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0) ? 0 : 2);
+        // Шестой случай: ускоритель. Склейка ядер — это арифметика, и она обязана сходиться:
+        // уран плюс кальций дают уже известный коперниций, а оганесон плюс водород — элемент,
+        // которого в природе нет, и он должен появиться в таблице голубым.
+        var acc = Accelerator.I;
+        bool accOk = false, synthOk = false;
+        if (acc != null)
+        {
+            acc.Put(0, Elements.BySymbol("U"));
+            acc.Put(1, Elements.BySymbol("Ca"));
+            acc.Fuse();
+            accOk = acc.Result != null && acc.Result.Z == 112 && acc.Result.Sym == "Cn" && !acc.Result.Synthetic;
+            Debug.Log("SELFTEST accel U+Ca: " + (acc.Result != null ? acc.Result.Sym + " Z=" + acc.Result.Z : "нет") +
+                      (accOk ? " OK" : " MISMATCH"));
+
+            int before = Elements.All.Length;
+            acc.Put(0, Elements.BySymbol("Og"));
+            acc.Put(1, Elements.BySymbol("H"));
+            acc.Fuse();
+            synthOk = acc.Result != null && acc.Result.Z == 119 && acc.Result.Synthetic && Elements.All.Length == before + 1;
+            Debug.Log("SELFTEST accel Og+H: " + (acc.Result != null ? acc.Result.Sym + " " + acc.Result.Name + " Z=" + acc.Result.Z : "нет") +
+                      " вэтаблице=" + (Elements.All.Length - before) + (synthOk ? " OK" : " MISMATCH"));
+
+            // Проверка не должна оставлять свой мусор в настоящей таблице владельца.
+            try { System.IO.File.Delete(System.IO.Path.Combine(Application.persistentDataPath, "synthetic.txt")); } catch { }
+            acc.Result = null;
+        }
+
+        Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone + " accel=" + accOk + " synth=" + synthOk);
+        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0 && accOk && synthOk) ? 0 : 2);
     }
 }

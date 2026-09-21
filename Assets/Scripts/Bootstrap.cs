@@ -67,7 +67,8 @@ public static class Bootstrap
         var lab = labGo.AddComponent<Lab>();
         lab.Cam = cam;
         labGo.AddComponent<LabUI>();
-        labGo.AddComponent<Traits>();      // характеры элементов: магнетизм, распад, жадность галогенов
+        labGo.AddComponent<Traits>();
+        labGo.AddComponent<Accelerator>();   // стенд синтеза: два гнезда и результат      // характеры элементов: магнетизм, распад, жадность галогенов
 
         if (SelfTest.Requested) labGo.AddComponent<SelfTest>();
         else lab.LoadZone();               // в проверке начинаем с чистой зоны, иначе она увидит чужое
