@@ -16,3 +16,7 @@
 *.unitypackage
 .vs/
 .idea/
+
+# Android build temp (gradle/ninja) and packaged files - rebuilt every time
+.utmp/
+dist/
