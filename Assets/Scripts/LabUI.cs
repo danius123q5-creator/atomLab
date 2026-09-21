@@ -1166,7 +1166,8 @@ public class LabUI : MonoBehaviour
         if (GUI.Button(new Rect(x + 336f, y, 140f, 28f), Lang.T("Выход из игры", "Quit game"), sTab)) lab.ExitGame();
         GUI.color = Color.white;
 
-        if (lab.Selected.Count > 0 || lab.ClipboardCount > 0)
+        // На телефоне клавиш нет — подсказка про Ctrl только мешала карточке (фото 13:08).
+        if ((lab.Selected.Count > 0 || lab.ClipboardCount > 0) && !Application.isMobilePlatform)
             GUI.Label(new Rect(x, y - 20f, 520f, 18f),
                 Lang.T("Выделено: ", "Selected: ") + lab.Selected.Count + Lang.T("   ·   в буфере: ", "   ·   clipboard: ") + lab.ClipboardCount +
                 Lang.T("   ·   Ctrl+C копировать, Ctrl+V (Ctrl+М) вставить, Ctrl+A выделить всё", "   ·   Ctrl+C copy, Ctrl+V paste, Ctrl+A select all"), sSmall);

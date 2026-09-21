@@ -267,6 +267,21 @@ public class SelfTest : MonoBehaviour
             Debug.Log("SELFTEST gravity: расстояние " + gap0.ToString("0.00") + " -> " + gap1.ToString("0.00") + ", сдвиг He " + movedH.ToString("0.00") + " U " + movedU.ToString("0.000")
                       + ", глубина воронки U " + deepU.ToString("0.00") + " He " + deepH.ToString("0.00") + (gOk ? " OK" : " MISMATCH"));
             lab.ClearZone();
+
+            // 2.5.5 (фото владельца 20:11 «воду не могу взять» — вышло H–O–O): притяжение не
+            // должно само сводить атомы до связи. Кладём O, O, H рядом, как при сборке руками.
+            yield return new WaitForSeconds(0.15f);
+            Atom.Spawn(Elements.BySymbol("O"), gc + new Vector3(-0.9f, 0f, 0f));
+            Atom.Spawn(Elements.BySymbol("O"), gc + new Vector3(0.9f, 0f, 0f));
+            Atom.Spawn(Elements.BySymbol("H"), gc + new Vector3(0f, 1.6f, 0f));
+            int bondsBefore = Bond.All.Count;
+            grav.On = true; grav.Strength = 0.5f;
+            yield return new WaitForSeconds(8f);
+            grav.On = false;
+            float ooGap = -1f; { var os = new List<Atom>(); foreach (var a in Atom.All) if (a.El.Sym == "O") os.Add(a); if (os.Count == 2) ooGap = (os[0].transform.position - os[1].transform.position).magnitude; }
+            bool noSelfBond = Bond.All.Count == bondsBefore;
+            Debug.Log("SELFTEST gravity-no-bond: связей было " + bondsBefore + ", стало " + Bond.All.Count + ", O–O " + ooGap.ToString("0.00") + (noSelfBond ? " OK" : " MISMATCH"));
+            lab.ClearZone();
         }
 
         // 2.5.4 (кадр владельца: из кучи вышли F2 и «AlFMn»): металлы забирают галоген в соли.
