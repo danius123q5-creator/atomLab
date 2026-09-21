@@ -59,7 +59,12 @@ if ($haveOrigin) { git remote set-url origin $remoteUrl } else { git remote add 
 # filtered anyway, because git echoes the remote URL on error.
 $env:GIT_TERMINAL_PROMPT = "0"
 $pushUrl = "https://x-access-token:$tok@github.com/$owner/$repoName.git"
+# git writes its normal progress to stderr, and under $ErrorActionPreference = "Stop" even
+# the success line "To https://..." becomes a terminating error. Native tools get "Continue".
+$prevEA = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 $out = (git -c http.proxy=$proxy push $pushUrl HEAD:main 2>&1 | Out-String)
+$ErrorActionPreference = $prevEA
 $out = $out.Replace($tok, "***")
 Write-Host $out
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "git push failed with code $LASTEXITCODE" }
