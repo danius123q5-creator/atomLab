@@ -149,37 +149,78 @@ public static class Chemistry
 
         var made = new List<string>();
         int spot = 0;
-        bool progress = true;
-        while (progress && made.Count < 12)
+
+        System.Action<Dictionary<string, int>, string> build = (need, label) =>
         {
-            progress = false;
-            foreach (var inf in order)
+            var taken = new List<Atom>();
+            foreach (var kv in need)
+                for (int i = 0; i < kv.Value; i++)
+                {
+                    var list = pool[kv.Key];
+                    taken.Add(list[list.Count - 1]);
+                    list.RemoveAt(list.Count - 1);
+                }
+            float ang = spot * 2.4f;
+            Vector3 c = Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * (1.6f + spot * 0.9f), Mathf.Sin(ang * 1.7f) * 1.1f, Mathf.Sin(ang) * (1.4f + spot * 0.8f));
+            c.x = Mathf.Clamp(c.x, Lab.ZoneCenter.x - 4f, Lab.ZoneCenter.x + 4f);
+            c.z = Mathf.Clamp(c.z, Lab.ZoneCenter.z - 3f, Lab.ZoneCenter.z + 3f);
+            Assemble(taken, c);
+            Fx.Sparks(c, new Color(0.6f, 1f, 0.8f), 30, 3f);
+            made.Add(label);
+            spot++;
+        };
+
+        System.Action<bool> catalog = allowSimple =>
+        {
+            bool progress = true;
+            while (progress && made.Count < 12)
             {
-                if (size[inf] < 2) continue;
-                var need = Molecules.ParseFormula(inf.Formula);
-                if (!CanTake(pool, need)) continue;
+                progress = false;
+                foreach (var inf in order)
+                {
+                    if (size[inf] < 2) continue;
+                    var need = Molecules.ParseFormula(inf.Formula);
+                    if (!allowSimple && need.Count == 1) continue;
+                    if (!CanTake(pool, need)) continue;
+                    build(need, inf.Name + " (" + inf.Formula + ")");
+                    progress = true;
+                    break;
+                }
+            }
+        };
 
-                var taken = new List<Atom>();
-                foreach (var kv in need)
-                    for (int i = 0; i < kv.Value; i++)
-                    {
-                        var list = pool[kv.Key];
-                        taken.Add(list[list.Count - 1]);
-                        list.RemoveAt(list.Count - 1);
-                    }
-
-                float ang = spot * 2.4f;
-                Vector3 c = Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * (1.6f + spot * 0.9f), Mathf.Sin(ang * 1.7f) * 1.1f, Mathf.Sin(ang) * (1.4f + spot * 0.8f));
-                c.x = Mathf.Clamp(c.x, Lab.ZoneCenter.x - 4f, Lab.ZoneCenter.x + 4f);
-                c.z = Mathf.Clamp(c.z, Lab.ZoneCenter.z - 3f, Lab.ZoneCenter.z + 3f);
-                Assemble(taken, c);
-                Fx.Sparks(c, new Color(0.6f, 1f, 0.8f), 30, 3f);
-                made.Add(inf.Name + " (" + inf.Formula + ")");
-                spot++;
-                progress = true;
-                break;
+        // 🔴 21.09, владелец прислал кадр: из большой кучи вышли F2 и «AlFMn» — марганец и
+        // алюминий на одном фторе, у марганца шесть пустых связей. Фтор ушёл в F2 раньше, чем
+        // его могли взять металлы. Теперь порядок как в жизни:
+        //   1) сложные вещества из справочника;
+        //   2) СОЛИ металлов с галогенами, кислородом и серой — формула по зарядам ионов
+        //      (Mn +2, F −1 → MnF2; Al +3, F −1 → AlF3);
+        //   3) простые вещества (F2, O2, H2) — только из того, что осталось.
+        catalog(false);
+        var simpleAnions = new[] { "F", "O", "Cl", "Br", "S", "I" };
+        bool saltProgress = true;
+        while (saltProgress && made.Count < 12)
+        {
+            saltProgress = false;
+            foreach (var kv in pool)
+            {
+                if (kv.Value.Count == 0 || !Reactions.IsMetal(kv.Value[0].El)) continue;
+                foreach (var an in simpleAnions)
+                {
+                    var anion = Reactions.AnionByName(an);
+                    if (anion == null) continue;
+                    var need = Reactions.SaltComp(kv.Key, anion, 1);
+                    if (!CanTake(pool, need)) continue;
+                    var info = Molecules.LookupByComposition(need);
+                    string f = kv.Key + (need[kv.Key] > 1 ? need[kv.Key].ToString() : "") + an + (need[an] > 1 ? need[an].ToString() : "");
+                    build(need, info != null ? info.Name + " (" + info.Formula + ")" : f);
+                    saltProgress = true;
+                    break;
+                }
+                if (saltProgress) break;
             }
         }
+        catalog(true);
 
         // 🔴 21.09, владелец: «надо хотя бы что-то!». Раньше, если из набора не выходило ни
         // одного вещества из справочника, реакция честно писала «впустую» — и не делала
@@ -195,19 +236,34 @@ public static class Chemistry
         {
             // Кладём в кучку, пока у неё есть чем связываться: связей у собранного должно
             // хватать, иначе половина атомов повиснет рядом без связи.
+            // Без неметалла кучка — это сплав, а не соединение: металлы остаются одиночками.
+            bool anyNonMetal = false;
+            foreach (var a in leftovers) if (a.El.Valence > 0 && !Reactions.IsMetal(a.El)) { anyNonMetal = true; break; }
+            if (!anyNonMetal) break;
+
             var clump = new List<Atom>();
-            int capacity = 0;
+            var aside = new List<Atom>();
+            int capacity = 0; bool hasMetal = false, hasNonMetal = false;
             while (leftovers.Count > 0 && clump.Count < 9)
             {
                 var a = leftovers[leftovers.Count - 1];
                 if (a.El.Valence == 0 && clump.Count > 0) break;       // благородный газ не липнет
                 leftovers.RemoveAt(leftovers.Count - 1);
                 if (a.El.Valence == 0) { continue; }                   // и в кучку его не берём
+                bool metal = Reactions.IsMetal(a.El);
+                if (metal && hasMetal) { aside.Add(a); continue; }     // второй металл в кучку не берём
                 clump.Add(a);
+                if (metal) hasMetal = true; else hasNonMetal = true;
                 capacity += a.El.Valence;
-                if (clump.Count >= 2 && capacity >= clump.Count * 2) break;
+                if (clump.Count >= 2 && hasNonMetal && capacity >= clump.Count * 2) break;
             }
-            if (clump.Count < 2) break;
+            leftovers.AddRange(aside);
+            if (clump.Count < 2 || !hasNonMetal)
+            {
+                // Кучка не сложилась — возвращаем, и дальше не пытаемся.
+                leftovers.AddRange(clump);
+                break;
+            }
 
             float ang = spot * 2.4f;
             Vector3 c2 = Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * (1.6f + spot * 0.9f), Mathf.Sin(ang * 1.7f) * 1.1f, Mathf.Sin(ang) * (1.4f + spot * 0.8f));

@@ -721,6 +721,17 @@ public class Lab : MonoBehaviour
 
     // ==================== разбор собранного ====================
 
+    /// <summary>Неузнанное — по Гиллу, но соль пишут с металла: MnF2, а не F2Mn (2.5.4).</summary>
+    static string MetalFirst(Dictionary<string, int> counts)
+    {
+        if (counts.ContainsKey("C")) return Molecules.Formula(counts);
+        string metal = null;
+        foreach (var kv in counts) if (Reactions.IsMetal(Elements.BySymbol(kv.Key))) { if (metal != null) return Molecules.Formula(counts); metal = kv.Key; }
+        if (metal == null || counts.Count < 2) return Molecules.Formula(counts);
+        var rest = new Dictionary<string, int>(counts); rest.Remove(metal);
+        return metal + (counts[metal] > 1 ? counts[metal].ToString() : "") + Molecules.Formula(rest);
+    }
+
     public void Recompute()
     {
         zoneDirty = true;
@@ -755,7 +766,7 @@ public class Lab : MonoBehaviour
             }
             m.Info = Molecules.LookupByComposition(counts);
             // Узнанное показываем так, как пишут люди (NaCl, H2SO4), а неузнанное — по Гиллу.
-            m.Formula = m.Info != null ? m.Info.Formula : Molecules.Formula(counts);
+            m.Formula = m.Info != null ? m.Info.Formula : MetalFirst(counts);
             m.Center = sum / m.Atoms.Count;
             m.FreeLeft = free;
             Mols.Add(m);

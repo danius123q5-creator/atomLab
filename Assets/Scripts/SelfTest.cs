@@ -16,7 +16,7 @@ public class SelfTest : MonoBehaviour
         get
         {
             foreach (var a in System.Environment.GetCommandLineArgs())
-                if (a == "-selftest" || a == "-demo") return true;
+                if (a == "-selftest" || a == "-demo" || a == "-mapshot") return true;
             return false;
         }
     }
@@ -100,6 +100,27 @@ public class SelfTest : MonoBehaviour
     IEnumerator Start()
     {
         Lab.Mode = Lab.Level.School;   // проверка идёт на школьном уровне, что бы ни выбрал игрок (в настройки не пишется)
+        if (Gravity.I != null) Gravity.I.On = false;   // старые проверки мерят химию без притяжения; его проверяем отдельно
+
+        // -mapshot: кадр с картой притяжения (глазом проверить воронки) и выход.
+        if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mapshot") >= 0)
+        {
+            yield return new WaitForSeconds(0.5f);
+            Lab.I.ClearZone();
+            Vector3 c0 = Lab.ZoneCenter;
+            Atom.Spawn(Elements.BySymbol("U"), c0 + new Vector3(-2.5f, 0f, -1f));
+            Atom.Spawn(Elements.BySymbol("Fe"), c0 + new Vector3(2f, 0.5f, 1.5f));
+            Atom.Spawn(Elements.BySymbol("O"), c0 + new Vector3(0.5f, -1f, -2f));
+            for (int i = 0; i < 5; i++) Atom.Spawn(Elements.BySymbol("He"), c0 + new Vector3(-4f + i * 2f, 1.5f, 3f));
+            Gravity.I.On = true;
+            yield return new WaitForSeconds(2.5f);
+            string shot = System.IO.Path.Combine(DataDir, "mapshot.png");
+            ScreenCapture.CaptureScreenshot(shot);
+            yield return new WaitForSeconds(1f);
+            Debug.Log("MAPSHOT " + shot);
+            Application.Quit(0);
+            yield break;
+        }
         yield return new WaitForSeconds(0.5f);
         var lab = Lab.I;
         var H = Elements.BySymbol("H");
@@ -209,6 +230,70 @@ public class SelfTest : MonoBehaviour
             th.ZoneCold = false; th.Scripted = false;
             bool thOk = thAfter < thBefore && vmax < 0.5f;
             Debug.Log("SELFTEST thermo: связей у O до нагрева " + thBefore + ", после " + thAfter + " | скорость после охлаждения зоны " + vmax.ToString("0.00") + (thOk ? " OK" : " MISMATCH"));
+            lab.ClearZone();
+
+            // 2.5.4: сильный жар рассыпает одиночный атом; слабый — нет.
+            yield return new WaitForSeconds(0.15f);
+            var lone = Atom.Spawn(Elements.BySymbol("Ne"), Lab.ZoneCenter);
+            th.Scripted = true; th.Current = Thermo.Tool.Heat; th.Radius = 3f; th.Strength = 0.4f; th.Point = Lab.ZoneCenter; th.Applying = true;
+            yield return new WaitForSeconds(2.5f);
+            bool weakKept = lone != null && Atom.All.Contains(lone);
+            int shBefore = th.Shattered;
+            th.Strength = 1f;
+            for (int k = 0; k < 60 && lone != null; k++) { th.Point = lone.transform.position; yield return new WaitForSeconds(0.1f); }
+            th.Applying = false; th.Current = Thermo.Tool.None; th.Scripted = false;
+            yield return new WaitForSeconds(0.3f);
+            bool gone = lone == null && th.Shattered == shBefore + 1;
+            Debug.Log("SELFTEST shatter: слабый огонь атом оставил=" + weakKept + ", сильный рассыпал=" + gone + ((weakKept && gone) ? " OK" : " MISMATCH"));
+            lab.ClearZone();
+        }
+
+        // 2.5.4: тяжёлый тянет лёгкого, сам почти стоит; карта глубже у тяжёлого.
+        var grav = Gravity.I;
+        if (grav != null)
+        {
+            yield return new WaitForSeconds(0.15f);
+            Vector3 gc = Lab.ZoneCenter;
+            var uAt = Atom.Spawn(Elements.BySymbol("U"), gc + new Vector3(-1.6f, 0f, 0f));
+            var Hl = Atom.Spawn(Elements.BySymbol("He"), gc + new Vector3(1.6f, 0f, 0f));   // гелий: не свяжется и не отвлечёт
+            Vector3 u0 = uAt.transform.position, h0 = Hl.transform.position;
+            float deepU = Gravity.Depth(Gravity.MapPos(u0).x, Gravity.MapPos(u0).y), deepH = Gravity.Depth(Gravity.MapPos(h0).x, Gravity.MapPos(h0).y);
+            grav.On = true; grav.Strength = 0.5f;
+            yield return new WaitForSeconds(1.5f);
+            grav.On = false;
+            float movedU = (uAt.transform.position - u0).magnitude, movedH = (Hl.transform.position - h0).magnitude;
+            float gap0 = (h0 - u0).magnitude, gap1 = (Hl.transform.position - uAt.transform.position).magnitude;
+            bool gOk = gap1 < gap0 - 0.3f && movedH > movedU * 3f && deepU > deepH + 0.3f;
+            Debug.Log("SELFTEST gravity: расстояние " + gap0.ToString("0.00") + " -> " + gap1.ToString("0.00") + ", сдвиг He " + movedH.ToString("0.00") + " U " + movedU.ToString("0.000")
+                      + ", глубина воронки U " + deepU.ToString("0.00") + " He " + deepH.ToString("0.00") + (gOk ? " OK" : " MISMATCH"));
+            lab.ClearZone();
+        }
+
+        // 2.5.4 (кадр владельца: из кучи вышли F2 и «AlFMn»): металлы забирают галоген в соли.
+        {
+            lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+            string[] ss = { "Mn", "Al", "F", "F", "F", "F", "F" };
+            var blob = new List<Atom>();
+            for (int i = 0; i < ss.Length; i++)
+            {
+                float ang = i * Mathf.PI * 2f / ss.Length;
+                blob.Add(Atom.Spawn(Elements.BySymbol(ss[i]), Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * 3.5f, Mathf.Sin(ang) * 2f, 0f)));
+            }
+            yield return new WaitForSeconds(0.2f);
+            Chemistry.React();
+            yield return new WaitForSeconds(0.6f);
+            lab.Recompute();
+            string saltGot = ""; bool f2 = false, twoMetals = false;
+            foreach (var m in lab.Mols)
+            {
+                if (m.Atoms.Count < 2) continue;
+                saltGot += m.Formula + " ";
+                int metals = 0; foreach (var a in m.Atoms) if (Reactions.IsMetal(a.El)) metals++;
+                if (metals >= 2) twoMetals = true;
+                if (m.Formula == "F2") f2 = true;
+            }
+            bool saltOk = !f2 && !twoMetals && saltGot.Contains("MnF2") && saltGot.Contains("AlF3");
+            Debug.Log("SELFTEST salts: " + saltGot.Trim() + (saltOk ? " OK" : " MISMATCH"));
             lab.ClearZone();
         }
 
@@ -565,7 +650,7 @@ public class SelfTest : MonoBehaviour
         Chemistry.React();
         yield return new WaitForSeconds(0.3f);
         lab.Recompute();
-        zincOk = HasFormula(lab, "H2") && HasFormula(lab, "Cl2Zn");
+        zincOk = HasFormula(lab, "H2") && HasFormula(lab, "ZnCl2");
         Debug.Log("SELFTEST react Zn+HCl: " + ZoneText(lab) + (zincOk ? " OK" : " MISMATCH"));
 
         // 8.3 Медь стоит ПОСЛЕ водорода — реакции быть не должно, и игра обязана сказать почему.

@@ -132,6 +132,44 @@ public class DecayFx : MonoBehaviour
         Pulse(atom, from, to, new Color(0.5f, 0.85f, 1f), 1.9f);
     }
 
+    /// <summary>Атом рассыпается от жара (21.09, владелец: «при высокой температуре атомы
+    /// должны распадаться»): вылетают протоны, нейтроны и электроны, сам атом исчезает.
+    /// Протонов и нейтронов рисуем не больше пяти каждого — у урана их сотни, а экран один;
+    /// точное число — в подписи.</summary>
+    public static void Shatter(Atom atom)
+    {
+        if (atom == null) return;
+        var r = Runner();
+        var el = atom.El;
+        int z = Mathf.Max(1, el.Z);
+        int n = Mathf.Max(0, Mathf.RoundToInt(el.Mass) - z);
+        int showP = Mathf.Min(5, z), showN = Mathf.Min(5, n), showE = Mathf.Min(3, z);
+        int total = showP + showN + showE;
+        for (int i = 0; i < total; i++)
+        {
+            bool isP = i < showP, isN = !isP && i < showP + showN;
+            Vector3 d = Random.onUnitSphere;
+            if (Lab.Mode2D) { d.z = 0f; d = d.sqrMagnitude > 0.01f ? d.normalized : Vector3.right; }
+            var t = new GameObject(isP ? "Proton" : isN ? "Neutron" : "Electron").transform;
+            t.position = atom.transform.position;
+            Ball(t, Vector3.zero, isP || isN ? 0.13f : 0.08f, isP ? ProtonC : isN ? NeutronC : ElectronC);
+            string label = null;
+            if (i == 0) label = z + "p + " + n + "n";
+            else if (i == showP + showN) label = z + "e⁻";
+            r.flights.Add(new Flight
+            {
+                T = t, Vel = d * (isP || isN ? 6f : 9f), Life = 1.5f, Drag = isP || isN ? 1.2f : 0.8f,
+                Age = -DecayPulse.Squeeze - (isP || isN ? 0f : 0.1f),
+                Label = label, LabelColor = isP || isN ? new Color(1f, 0.7f, 0.5f) : new Color(0.6f, 0.9f, 1f),
+                Trail = isP ? new Color(1f, 0.5f, 0.4f) : isN ? new Color(0.8f, 0.8f, 0.85f) : new Color(0.5f, 0.85f, 1f),
+                StartScale = 1f, From = atom.transform,
+            });
+        }
+        Pulse(atom, el, el, new Color(1f, 0.85f, 0.5f), 1.3f);
+        var pulse = atom.GetComponent<DecayPulse>();
+        if (pulse != null) pulse.DieAfter = true;
+    }
+
     static void Pulse(Atom atom, Elements.El from, Elements.El to, Color flash, float pitch)
     {
         var pulse = atom.gameObject.GetComponent<DecayPulse>();
@@ -203,6 +241,8 @@ public class DecayPulse : MonoBehaviour
     const float Settle = 0.45f;          // оседание
 
     float t = -1f;
+    public bool DieAfter;                // атом рассыпался от жара — после взрыва его нет
+    public bool Busy { get { return t >= 0f; } }
     float fromD, toD;
     Color fromC, toC, flashC;
     float pitch;
@@ -258,6 +298,16 @@ public class DecayPulse : MonoBehaviour
             }
         }
         transform.localScale = Vector3.one * d;
+
+        if (DieAfter && burst)
+        {
+            // Частицы уже вылетели из этой точки — атома больше нет.
+            t = -1f;
+            var dead = GetComponent<Atom>();
+            if (dead != null) { dead.Despawn(); if (Lab.I != null) Lab.I.Recompute(); }
+            else Destroy(gameObject);
+            return;
+        }
 
         if (t >= Squeeze + Pop + Settle)
         {

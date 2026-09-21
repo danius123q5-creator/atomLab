@@ -41,6 +41,7 @@ public class LabUI : MonoBehaviour
             if (carrying != null || drag == DragKind.Panel) return true;
             if (updRect.width > 0f && updRect.Contains(MouseGui)) return true;   // плашка обновления
             if (thermoRect.width > 0f && thermoRect.Contains(MouseGui)) return true;   // панель нагрева
+            if (gravRect.width > 0f && gravRect.Contains(MouseGui)) return true;       // карта притяжения
             if (menuAtom != null &&
                 MenuRect.Contains(MouseGui)) return true;
             if ((replaceTarget != null || pendingSlot >= 0) &&
@@ -212,6 +213,7 @@ public class LabUI : MonoBehaviour
         DrawQuarks();
         DrawPhys();
         DrawThermo();
+        DrawGravity();
         DrawPicker();
         DrawMenu();
         DrawCarry(e);
@@ -768,6 +770,132 @@ public class LabUI : MonoBehaviour
     // ==================== нагрев и заморозка (21.09, владелец) ====================
 
     Rect thermoRect;
+
+    // ==================== карта притяжения (21.09, владелец) ====================
+    // «Создай карту гравитационного притяжения: глубиной воронки показан вес, и при движении
+    // частиц воронки движутся». Сетка — как натянутая ткань: каждый атом продавливает её тем
+    // глубже, чем он тяжелее. Карта пересчитывается каждый кадр, поэтому воронки ездят за атомами.
+
+    Rect gravRect;
+    bool gravOpen = !Application.isMobilePlatform;
+    Texture2D mapTex;
+    Color32[] mapBuf;
+
+    void DrawGravity()
+    {
+        gravRect = new Rect();
+        var g = Gravity.I;
+        if (g == null || accelOn || builderOn || quarkOn || physOn) return;
+        float x = PanelRightGui + 10f, w = 260f;
+        float y = thermoRect.width > 0f ? thermoRect.yMax + 8f : 80f;
+        // Высота карты — ровно под сетку: косой вид занимает 0.9·глубину зоны, плюс провал воронок.
+        Vector2 mh = Gravity.MapHalf;
+        float mapS = (w - 12f - 14f) / (2f * mh.x + 0.7f * mh.y);
+        float mapH = gravOpen ? Mathf.Min(0.9f * mh.y * mapS + 64f + 14f, Mathf.Max(90f, SH - y - 120f)) : 0f;
+        float h = gravOpen ? 34f + mapH + 100f : 30f;
+        var r = new Rect(x, y, w, h);
+        gravRect = r;
+        GUI.color = new Color(0f, 0f, 0f, 0.6f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(0.75f, 0.5f, 1f);
+        GUI.DrawTexture(new Rect(r.x, r.y, 3f, r.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        if (GUI.Button(new Rect(r.x + 6f, r.y + 3f, w - 12f, 24f), Lang.T("Карта притяжения ", "Gravity map ") + (gravOpen ? "▾" : "▸"), sTab))
+            gravOpen = !gravOpen;
+        if (!gravOpen) return;
+
+        var mr = new Rect(r.x + 6f, r.y + 32f, w - 12f, mapH);
+        GUI.color = new Color(0.05f, 0.04f, 0.12f, 0.85f);
+        GUI.DrawTexture(mr, Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        if (Event.current.type == EventType.Repaint) DrawFunnels(mr);
+
+        float yy = mr.yMax + 6f;
+        bool on = GUI.Toggle(new Rect(r.x + 8f, yy, w - 16f, 22f), g.On, Lang.T("  Тяжёлые притягивают лёгких", "  Heavy atoms pull light ones"));
+        if (on != g.On)
+        {
+            g.On = on;
+            Lab.I.Say(on ? Lang.T("Притяжение включено: лёгкие атомы потянутся к тяжёлым.", "Gravity on: light atoms will drift to heavy ones.")
+                         : Lang.T("Притяжение выключено.", "Gravity off."), new Color(0.8f, 0.65f, 1f));
+        }
+        yy += 24f;
+        GUI.Label(new Rect(r.x + 8f, yy, w - 16f, 18f), Lang.T("Сила притяжения: ", "Pull strength: ") + Mathf.RoundToInt(g.Strength * 100f) + "%", sSmall);
+        g.Strength = GUI.HorizontalSlider(new Rect(r.x + 8f, yy + 20f, w - 16f, 16f), g.Strength, 0f, 1f);
+        yy += 38f;
+        GUI.Label(new Rect(r.x + 8f, yy, w - 16f, 36f),
+            Lab.Mode >= Lab.Level.Uni ? Lang.T("Глубина = масса. В жизни тяготение атомов в 10³⁶ раз слабее их зарядов.", "Depth = mass. Real atomic gravity is 10³⁶ times weaker than charge.")
+                                      : Lang.T("Чем тяжелее атом, тем глубже его воронка.", "The heavier the atom, the deeper its funnel."), sSmall);
+    }
+
+    /// <summary>Сетка-«ткань», продавленная атомами. Косой вид сверху: даль уходит вверх,
+    /// глубина — вниз. Рисуем линиями GL прямо в пикселях экрана.</summary>
+    void DrawFunnels(Rect mr)
+    {
+        Vector2 half = Gravity.MapHalf;
+        const int NU = 28;
+        int NV = Mathf.Max(8, Mathf.RoundToInt(NU * half.y / half.x));
+        float depthPx = Mathf.Min(64f, mr.height * 0.45f);
+        float S = Mathf.Min((mr.width - 14f) / (2f * half.x + 0.7f * half.y), (mr.height - depthPx - 12f) / (0.9f * half.y));
+        float cx = mr.center.x;
+        float cy = mr.y + 6f + half.y * S * 0.45f;
+
+        var dep = new float[NU + 1, NV + 1];
+        var pts = new Vector2[NU + 1, NV + 1];
+        for (int i = 0; i <= NU; i++)
+            for (int j = 0; j <= NV; j++)
+            {
+                float u = -half.x + 2f * half.x * i / NU, v = -half.y + 2f * half.y * j / NV;
+                float d = Gravity.Depth(u, v);
+                dep[i, j] = d;
+                pts[i, j] = new Vector2(cx + u * S + v * S * 0.35f, cy - v * S * 0.45f + d * depthPx);
+            }
+
+        // Сетку рисуем в свою текстуру (линии по пикселям), а текстуру — обычным GUI: так нет
+        // вопросов, какой шейдер попал в сборку и куда у GL смотрит ось y на телефоне.
+        int tw = Mathf.Max(8, Mathf.RoundToInt(mr.width)), th = Mathf.Max(8, Mathf.RoundToInt(mr.height));
+        if (mapTex == null || mapTex.width != tw || mapTex.height != th)
+        {
+            if (mapTex != null) Destroy(mapTex);
+            mapTex = new Texture2D(tw, th, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            mapBuf = new Color32[tw * th];
+        }
+        System.Array.Clear(mapBuf, 0, mapBuf.Length);
+        for (int j = 0; j <= NV; j++)
+            for (int i = 0; i < NU; i++) Seg(pts[i, j] - mr.position, pts[i + 1, j] - mr.position, (dep[i, j] + dep[i + 1, j]) * 0.5f, tw, th);
+        for (int i = 0; i <= NU; i++)
+            for (int j = 0; j < NV; j++) Seg(pts[i, j] - mr.position, pts[i, j + 1] - mr.position, (dep[i, j] + dep[i, j + 1]) * 0.5f, tw, th);
+        mapTex.SetPixels32(mapBuf);
+        mapTex.Apply(false);
+        GUI.DrawTexture(mr, mapTex);
+
+        // Сами атомы — на дне своих воронок, кружок тем крупнее, чем тяжелее.
+        foreach (var a in Atom.All)
+        {
+            if (a == null) continue;
+            Vector2 p = Gravity.MapPos(a.transform.position);
+            if (Mathf.Abs(p.x) > half.x + 0.2f || Mathf.Abs(p.y) > half.y + 0.2f) continue;
+            float d = Gravity.Depth(p.x, p.y);
+            var sp = new Vector2(cx + p.x * S + p.y * S * 0.35f, cy - p.y * S * 0.45f + d * depthPx);
+            float size = 4f + Mathf.Pow(Mathf.Max(1f, a.El.Mass), 1f / 3f) * 1.3f;
+            GUI.color = a.El.Color;
+            GUI.DrawTexture(new Rect(sp.x - size * 0.5f, sp.y - size * 0.5f, size, size), DotTex);
+        }
+        GUI.color = Color.white;
+    }
+
+    void Seg(Vector2 a, Vector2 b, float depth, int tw, int th)
+    {
+        Color32 c = Color.Lerp(new Color(0.35f, 0.6f, 1f, 0.6f), new Color(1f, 0.45f, 0.85f, 1f), Mathf.Clamp01(depth * 1.3f));
+        int n = Mathf.Max(1, Mathf.CeilToInt(Mathf.Max(Mathf.Abs(b.x - a.x), Mathf.Abs(b.y - a.y))));
+        for (int k = 0; k <= n; k++)
+        {
+            float t = (float)k / n;
+            int x = Mathf.RoundToInt(Mathf.Lerp(a.x, b.x, t));
+            int y = Mathf.RoundToInt(Mathf.Lerp(a.y, b.y, t));
+            if (x < 0 || x >= tw || y < 0 || y >= th) continue;
+            mapBuf[(th - 1 - y) * tw + x] = c;        // у текстуры строка 0 внизу, у GUI y сверху
+        }
+    }
     bool thermoOpen = !Application.isMobilePlatform;   // на телефоне свёрнута: место дорого
 
     /// <summary>Синий оттенок охлаждённой зоны — поверх мира, под интерфейсом.</summary>

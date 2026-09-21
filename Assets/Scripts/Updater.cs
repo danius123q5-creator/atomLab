@@ -19,7 +19,7 @@ using UnityEngine.Networking;
 public class Updater : MonoBehaviour
 {
     /// <summary>Версия ЭТОЙ сборки. Сборщик записывает её же в PlayerSettings.bundleVersion.</summary>
-    public const string Version = "2.5.3";
+    public const string Version = "2.5.4";
     const string Api = "https://api.github.com/repos/danius123q5-creator/atomLab/releases/latest";
 
     public static Updater I;

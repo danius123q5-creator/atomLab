@@ -50,7 +50,7 @@ public static class Reactions
         return -1;
     }
 
-    static bool IsMetal(Elements.El el)
+    public static bool IsMetal(Elements.El el)
     {
         return el != null && (el.Class == Elements.Cls.Alkali || el.Class == Elements.Cls.AlkEarth ||
                               el.Class == Elements.Cls.Transition || el.Class == Elements.Cls.PostMetal ||
