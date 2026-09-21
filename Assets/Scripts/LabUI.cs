@@ -41,6 +41,8 @@ public class LabUI : MonoBehaviour
             if (carrying != null || drag == DragKind.Panel) return true;
             if (menuAtom != null &&
                 MenuRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y))) return true;
+            if ((replaceTarget != null || pendingSlot >= 0) &&
+                Input.mousePosition.x <= PanelRightPx + 262f) return true;    // подменю справа от таблицы
             float mx = Input.mousePosition.x;
             return mx <= panelX + W + HandleW;
         }
@@ -137,6 +139,7 @@ public class LabUI : MonoBehaviour
         DrawAccelerator();
         DrawBuilder();
         DrawQuarks();
+        DrawPicker();
         DrawMenu();
         DrawCarry(e);
     }
@@ -189,22 +192,7 @@ public class LabUI : MonoBehaviour
             }
             else if (drag == DragKind.Scroll && d.magnitude < 10f && candidate != null && Lab.I != null)
             {
-                if (pendingSlot >= 0 && Accelerator.I != null)
-                {
-                    Accelerator.I.Put(pendingSlot, candidate);
-                    pendingSlot = -1;
-                }
-                else if (replaceTarget != null)
-                {
-                    // Ждали выбора элемента для замены — значит, клетка меняет атом, а не родит новый.
-                    string was = replaceTarget.El.Sym;
-                    replaceTarget.Become(candidate);
-                    Fx.Pop(1.2f);
-                    Fx.Sparks(replaceTarget.transform.position, new Color(0.8f, 0.95f, 1f), 25, 3f);
-                    Lab.I.Recompute();
-                    Lab.I.Say(was + " стал " + candidate.Sym + " (" + candidate.Name + ").", new Color(0.85f, 0.95f, 1f));
-                    replaceTarget = null;
-                }
+                if (pendingSlot >= 0 || replaceTarget != null) Choose(candidate);
                 else Lab.I.SpawnFromTable(candidate, new Vector3(Screen.width * 0.6f, Screen.height * 0.55f, 0f));
             }
             drag = DragKind.None; carrying = null; candidate = null;
@@ -920,6 +908,86 @@ public class LabUI : MonoBehaviour
         GUI.color = Color.white;
         GUI.Label(new Rect(r.x + 252f, r.y + 160f, r.width - 264f, 22f),
             "собрано: протонов " + q.MadeProtons + ", нейтронов " + q.MadeNeutrons, sSmall);
+    }
+
+
+    // ==================== подменю выбора элемента ====================
+
+    /// <summary>🔴 21.09, владелец: «замена и выбор в таблице должны открывать подменю справа
+    /// от окна с таблицей». Раньше игра просто писала подсказку в углу, и было неясно, чего
+    /// она ждёт. Теперь рядом с таблицей встаёт колонка с ходовыми элементами: ткнул — готово.
+    /// Клетка в самой таблице по-прежнему работает: подменю не запрещает, а сокращает путь.</summary>
+    static readonly string[] COMMON =
+    {
+        "H", "C", "N", "O", "F", "Na", "Mg", "Al", "Si", "P",
+        "S", "Cl", "K", "Ca", "Fe", "Cu", "Zn", "Ag", "Au", "Pb", "U"
+    };
+
+    void DrawPicker()
+    {
+        bool forReplace = replaceTarget != null;
+        bool forSlot = pendingSlot >= 0;
+        if (!forReplace && !forSlot) return;
+
+        float x = PanelRightPx + 6f;
+        float w = 250f;
+        if (x + w > Screen.width - 10f) return;
+        float h = 92f + Mathf.Ceil(COMMON.Length / 3f) * 30f;
+        var r = new Rect(x, tableTop - 40f, w, h);
+
+        GUI.color = new Color(0.07f, 0.1f, 0.16f, 0.97f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = forReplace ? new Color(1f, 0.8f, 0.4f, 0.9f) : new Color(0.4f, 0.8f, 1f, 0.9f);
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 2f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        string title = forReplace
+            ? "Заменить " + replaceTarget.El.Sym + " на:"
+            : "В гнездо " + (pendingSlot == 0 ? "слева" : "справа") + ":";
+        GUI.Label(new Rect(r.x + 10f, r.y + 6f, r.width - 20f, 22f), title, sTitle);
+        GUI.Label(new Rect(r.x + 10f, r.y + 28f, r.width - 20f, 20f), "ходовые — или любая клетка слева", sSmall);
+
+        float cw = (r.width - 28f) / 3f;
+        for (int i = 0; i < COMMON.Length; i++)
+        {
+            var el = Elements.BySymbol(COMMON[i]);
+            if (el == null) continue;
+            var cell = new Rect(r.x + 10f + (i % 3) * (cw + 4f), r.y + 52f + (i / 3) * 30f, cw, 26f);
+            GUI.color = el.PaintColor;
+            GUI.DrawTexture(cell, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            float lum = el.PaintColor.r * 0.3f + el.PaintColor.g * 0.59f + el.PaintColor.b * 0.11f;
+            sCell.normal.textColor = lum > 0.5f ? Color.black : Color.white;
+            GUI.Label(cell, el.Sym, sCell);
+            if (GUI.Button(cell, "", GUIStyle.none)) Choose(el);
+        }
+
+        if (GUI.Button(new Rect(r.x + 10f, r.yMax - 32f, r.width - 20f, 24f), "отмена", sTab))
+        {
+            replaceTarget = null;
+            pendingSlot = -1;
+        }
+    }
+
+    /// <summary>Один путь для обоих случаев: и подменю, и клетка таблицы приводят сюда.</summary>
+    void Choose(Elements.El el)
+    {
+        if (pendingSlot >= 0 && Accelerator.I != null)
+        {
+            Accelerator.I.Put(pendingSlot, el);
+            pendingSlot = -1;
+            return;
+        }
+        if (replaceTarget != null && Lab.I != null)
+        {
+            string was = replaceTarget.El.Sym;
+            replaceTarget.Become(el);
+            Fx.Pop(1.2f);
+            Fx.Sparks(replaceTarget.transform.position, new Color(0.8f, 0.95f, 1f), 25, 3f);
+            Lab.I.Recompute();
+            Lab.I.Say(was + " стал " + el.Sym + " (" + el.Name + ").", new Color(0.85f, 0.95f, 1f));
+            replaceTarget = null;
+        }
     }
 
     void DrawCarry(Event e)

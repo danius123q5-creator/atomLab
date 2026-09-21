@@ -44,6 +44,31 @@ public class SelfTest : MonoBehaviour
         }
     }
 
+
+    /// <summary>Собрать молекулу из символов, связав всех с первым атомом. Для проверок этого
+    /// хватает: движку важен состав и связность, а не углы.</summary>
+    static Atom[] Make(Vector3 at, params string[] syms)
+    {
+        var made = new Atom[syms.Length];
+        for (int i = 0; i < syms.Length; i++)
+            made[i] = Atom.Spawn(Elements.BySymbol(syms[i]), at + new Vector3(i * 0.55f, 0f, 0f));
+        for (int i = 1; i < made.Length; i++) Bond.Create(made[0], made[i]);
+        return made;
+    }
+
+    static bool HasFormula(Lab lab, string f)
+    {
+        foreach (var m in lab.Mols) if (m.Formula == f) return true;
+        return false;
+    }
+
+    static string ZoneText(Lab lab)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var m in lab.Mols) sb.Append(m.Formula).Append(' ');
+        return sb.ToString().Trim();
+    }
+
     IEnumerator Start()
     {
         yield return new WaitForSeconds(0.5f);
@@ -180,7 +205,55 @@ public class SelfTest : MonoBehaviour
             try { System.IO.File.Delete(System.IO.Path.Combine(Application.persistentDataPath, "assembled.txt")); } catch { }
         }
 
-        Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone + " accel=" + accOk + " synth=" + synthOk + " iso=" + isoOk + " ion=" + ionOk);
-        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0 && accOk && synthOk && isoOk && ionOk) ? 0 : 2);
+        // Восьмой случай: НАСТОЯЩИЕ реакции. Свойства должны решать, а не наличие атомов.
+        bool neutrOk = false, zincOk = false, copperOk = false;
+
+        // 8.1 Нейтрализация: HCl + NaOH -> NaCl + H2O.
+        lab.ClearZone();
+        yield return new WaitForSeconds(0.2f);
+        Make(c + new Vector3(-2f, 0f, 0f), "H", "Cl");
+        Make(c + new Vector3(2f, 0f, 0f), "Na", "O", "H");
+        yield return new WaitForSeconds(0.3f);
+        Chemistry.React();
+        lab.Recompute();
+        Debug.Log("SELFTEST сразу после реакции: " + ZoneText(lab) + "  связей=" + Bond.All.Count);
+        yield return new WaitForSeconds(0.3f);
+        lab.Recompute();
+        Debug.Log("SELFTEST через 0.3 с: " + ZoneText(lab) + "  связей=" + Bond.All.Count);
+        neutrOk = HasFormula(lab, "NaCl") && HasFormula(lab, "H2O");
+        Debug.Log("SELFTEST react acid+base: " + ZoneText(lab) + (neutrOk ? " OK" : " MISMATCH"));
+        Debug.Log("SELFTEST chain: " + lab.Toast);
+
+        // 8.2 Цинк активнее водорода: Zn + 2HCl -> ZnCl2 + H2.
+        lab.ClearZone();
+        yield return new WaitForSeconds(0.2f);
+        Atom.Spawn(Elements.BySymbol("Zn"), c);
+        Make(c + new Vector3(-2f, 0.5f, 0f), "H", "Cl");
+        Make(c + new Vector3(2f, -0.5f, 0f), "H", "Cl");
+        yield return new WaitForSeconds(0.3f);
+        Chemistry.React();
+        yield return new WaitForSeconds(0.3f);
+        lab.Recompute();
+        zincOk = HasFormula(lab, "H2") && HasFormula(lab, "Cl2Zn");
+        Debug.Log("SELFTEST react Zn+HCl: " + ZoneText(lab) + (zincOk ? " OK" : " MISMATCH"));
+
+        // 8.3 Медь стоит ПОСЛЕ водорода — реакции быть не должно, и игра обязана сказать почему.
+        lab.ClearZone();
+        ReactionEngine.Refusals.Clear();
+        yield return new WaitForSeconds(0.2f);
+        Atom.Spawn(Elements.BySymbol("Cu"), c);
+        Make(c + new Vector3(-2f, 0.5f, 0f), "H", "Cl");
+        Make(c + new Vector3(2f, -0.5f, 0f), "H", "Cl");
+        yield return new WaitForSeconds(0.3f);
+        Chemistry.React();
+        yield return new WaitForSeconds(0.3f);
+        lab.Recompute();
+        copperOk = !HasFormula(lab, "H2") && ReactionEngine.Refusals.Count > 0;
+        Debug.Log("SELFTEST react Cu+HCl: " + ZoneText(lab) + " отказов=" + ReactionEngine.Refusals.Count +
+                  (copperOk ? " OK" : " MISMATCH"));
+        lab.ClearZone();
+
+        Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone + " accel=" + accOk + " synth=" + synthOk + " iso=" + isoOk + " ion=" + ionOk + " neutr=" + neutrOk + " zinc=" + zincOk + " copper=" + copperOk);
+        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0 && accOk && synthOk && isoOk && ionOk && neutrOk && zincOk && copperOk) ? 0 : 2);
     }
 }

@@ -257,6 +257,10 @@ public class Lab : MonoBehaviour
         camYaw = 0f;
     }
 
+    /// <summary>Этот атом сейчас тянут мышью. По этому признаку связь и решает, рвать ли её:
+    /// рвать должна РУКА, а не случайный толчок соседа.</summary>
+    public bool IsDragged(Atom a) { return dragged == a; }
+
     public Atom PickAtom(Vector3 screenPos)
     {
         if (Cam == null) return null;
@@ -408,9 +412,11 @@ public class Lab : MonoBehaviour
                 else if (dist <= touch * 0.95f && (a.FreeValence == 0 || b.FreeValence == 0))
                 {
                     // Место кончилось — отталкиваем, чтобы было видно: связей больше нет.
+                    // Толчок мягкий (было 6): сильный расталкивал соседние молекулы так, что
+                    // рвал их собственные связи.
                     Vector3 dir = (a.transform.position - b.transform.position).normalized;
-                    a.Body.AddForce(dir * 6f, ForceMode.Acceleration);
-                    b.Body.AddForce(-dir * 6f, ForceMode.Acceleration);
+                    a.Body.AddForce(dir * 2.5f, ForceMode.Acceleration);
+                    b.Body.AddForce(-dir * 2.5f, ForceMode.Acceleration);
 
                     // 🔴 21.09, владелец: «не хочет стыковаться» — и игра МОЛЧАЛА. Отказ без
                     // причины выглядит как поломка. Теперь говорим, у кого кончились связи.

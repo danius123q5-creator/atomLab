@@ -84,6 +84,71 @@ public static class BuildScript
         if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
     }
 
+
+    /// <summary>Сборка под WebGL — то, чем играют «яблочники».
+    ///
+    /// 🔴 ПОЧЕМУ НЕ IPA. Приложение под iPhone собирается ТОЛЬКО на маке: Unity под Windows в
+    /// лучшем случае выдаёт проект для Xcode, а подписать и упаковать его может лишь macOS с
+    /// Xcode и платным ключом разработчика Apple. Модулей iOS и macOS в этом редакторе нет
+    /// вовсе. WebGL — честный обход: страница открывается в Safari на айфоне, айпаде и маке,
+    /// ставить ничего не нужно.</summary>
+    public static void BuildWebGL()
+    {
+        var scenes = EnsureScene();
+        PlayerSettings.productName = "AtomLab";
+        PlayerSettings.companyName = "Danich";
+        PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
+        PlayerSettings.WebGL.memorySize = 512;
+        PlayerSettings.runInBackground = true;
+
+        var opts = new BuildPlayerOptions
+        {
+            scenes = scenes,
+            locationPathName = "Build/WebGL",
+            target = BuildTarget.WebGL,
+            targetGroup = BuildTargetGroup.WebGL,
+            options = BuildOptions.None,
+        };
+
+        var report = BuildPipeline.BuildPlayer(opts);
+        var s = report.summary;
+        Debug.Log("WEBGL BUILD RESULT: " + s.result + "  size=" + s.totalSize + " bytes  errors=" + s.totalErrors);
+        if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
+    }
+
+
+    /// <summary>Экспорт проекта Xcode под iPhone/iPad.
+    ///
+    /// 🔴 ЧТО ЭТО ДАЁТ И ЧЕГО НЕ ДАЁТ. Unity под Windows выдаёт ПРОЕКТ для Xcode — папку с
+    /// исходниками и ресурсами. Это не приложение: превратить её в файл, который ставится на
+    /// айфон, может только мак с Xcode, и только с ключом разработчика Apple (платный, свой у
+    /// каждого). Без мака папка бесполезна; с маком — открыл и нажал «Run».
+    ///
+    /// Поэтому для яблочников по-прежнему проще WebGL: открывается в Safari и на айфоне, и на
+    /// маке, ставить ничего не нужно.</summary>
+    public static void BuildIOS()
+    {
+        var scenes = EnsureScene();
+        PlayerSettings.productName = "AtomLab";
+        PlayerSettings.companyName = "Danich";
+        PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.iOS, "com.danich.atomlab");
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+
+        var opts = new BuildPlayerOptions
+        {
+            scenes = scenes,
+            locationPathName = "Build/iOS",
+            target = BuildTarget.iOS,
+            targetGroup = BuildTargetGroup.iOS,
+            options = BuildOptions.None,
+        };
+
+        var report = BuildPipeline.BuildPlayer(opts);
+        var s = report.summary;
+        Debug.Log("IOS PROJECT RESULT: " + s.result + "  size=" + s.totalSize + " bytes  errors=" + s.totalErrors);
+        if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
+    }
+
     /// <summary>Только проверка компиляции: ничего не собирает, но падает на ошибке в коде.
     /// Быстрее полной сборки, поэтому правки гоняем через неё.</summary>
     public static void CompileOnly()

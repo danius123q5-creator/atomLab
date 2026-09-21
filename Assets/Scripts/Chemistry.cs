@@ -19,7 +19,7 @@ public static class Chemistry
     /// <summary>Строение собранного здесь приблизительное: центром берём атом с наибольшей
     /// валентностью и вешаем на него остальных, а лишних цепляем к тем, у кого ещё есть
     /// место. У готовых веществ из списка пресетов строение настоящее — это разные вещи.</summary>
-    static void Assemble(List<Atom> atoms, Vector3 center)
+    public static void Assemble(List<Atom> atoms, Vector3 center)
     {
         atoms.Sort((x, y) => y.El.Valence.CompareTo(x.El.Valence));
         var core = atoms[0];
@@ -64,6 +64,43 @@ public static class Chemistry
         if (Atom.All.Count < 2)
         {
             lab.Say("Реагировать нечему: в зоне меньше двух атомов.", new Color(1f, 0.9f, 0.6f));
+            return;
+        }
+
+        // 🔴 21.09, владелец: «реалистичные реакции, чтобы свойства всех элементов в цепи
+        // учитывались». Сначала пробуем настоящие правила — ряд активности, классы веществ,
+        // электроотрицательность, заряды ионов. Они идут ЦЕПЬЮ: после каждой реакции состав
+        // пересчитывается и ищется следующее правило уже для новых веществ.
+        //
+        // Пересборка по составу (ниже) осталась запасным ходом: она срабатывает, только если
+        // ни одно правило не подошло. Иначе кислота с щёлочью молча превращались бы во
+        // что-нибудь крупное вместо соли и воды.
+        ReactionEngine.Refusals.Clear();
+        var chain = new List<string>();
+        for (int step = 0; step < 8; step++)
+        {
+            var st = ReactionEngine.TryOne(lab);
+            if (st == null) break;
+            chain.Add(st.Text);
+        }
+
+        if (chain.Count > 0)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < chain.Count; i++) sb.Append(i + 1).Append(") ").Append(chain[i]).Append("   ");
+            if (ReactionEngine.Refusals.Count > 0) sb.Append("Не пошло: ").Append(ReactionEngine.Refusals[0]);
+            lab.Say(sb.ToString(), new Color(0.75f, 1f, 0.8f));
+            lab.Recompute();
+            return;
+        }
+
+        if (ReactionEngine.Refusals.Count > 0)
+        {
+            // Правила сработали — но отказом. Это ответ, а не пустота.
+            var sb = new System.Text.StringBuilder("Реакции не будет. ");
+            for (int i = 0; i < ReactionEngine.Refusals.Count && i < 2; i++) sb.Append(ReactionEngine.Refusals[i]).Append(' ');
+            lab.Say(sb.ToString(), new Color(1f, 0.85f, 0.6f));
+            Fx.Pop(0.7f);
             return;
         }
 
@@ -115,7 +152,7 @@ public static class Chemistry
                     }
 
                 float ang = spot * 2.4f;
-                Vector3 c = Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * (1.2f + spot * 0.5f), Mathf.Sin(ang * 1.7f) * 0.9f, Mathf.Sin(ang) * (1.0f + spot * 0.4f));
+                Vector3 c = Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * (1.6f + spot * 0.9f), Mathf.Sin(ang * 1.7f) * 1.1f, Mathf.Sin(ang) * (1.4f + spot * 0.8f));
                 c.x = Mathf.Clamp(c.x, Lab.ZoneCenter.x - 4f, Lab.ZoneCenter.x + 4f);
                 c.z = Mathf.Clamp(c.z, Lab.ZoneCenter.z - 3f, Lab.ZoneCenter.z + 3f);
                 Assemble(taken, c);
@@ -156,7 +193,7 @@ public static class Chemistry
             if (clump.Count < 2) break;
 
             float ang = spot * 2.4f;
-            Vector3 c2 = Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * (1.2f + spot * 0.5f), Mathf.Sin(ang * 1.7f) * 0.9f, Mathf.Sin(ang) * (1.0f + spot * 0.4f));
+            Vector3 c2 = Lab.ZoneCenter + new Vector3(Mathf.Cos(ang) * (1.6f + spot * 0.9f), Mathf.Sin(ang * 1.7f) * 1.1f, Mathf.Sin(ang) * (1.4f + spot * 0.8f));
             c2.x = Mathf.Clamp(c2.x, Lab.ZoneCenter.x - 4f, Lab.ZoneCenter.x + 4f);
             c2.z = Mathf.Clamp(c2.z, Lab.ZoneCenter.z - 3f, Lab.ZoneCenter.z + 3f);
             Assemble(clump, c2);
