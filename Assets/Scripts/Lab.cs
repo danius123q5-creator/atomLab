@@ -185,6 +185,16 @@ public class Lab : MonoBehaviour
         return a;
     }
 
+    /// <summary>Перезапуск: зона пустеет, камера возвращается в начальное положение.
+    /// Журнал открытий и очки НЕ трогаем — их чистит отдельная кнопка, чтобы случайный
+    /// «перезапуск» не стирал то, что собирали час.</summary>
+    public void RestartLab()
+    {
+        ClearZone();
+        camYaw = 20f; camPitch = 14f; camDist = 14f; camTarget = ZoneCenter;
+        Say("Лаборатория перезапущена. Журнал открытий на месте.", new Color(0.8f, 0.9f, 1f));
+    }
+
     public void ClearZone()
     {
         for (int i = Atom.All.Count - 1; i >= 0; i--) Atom.All[i].Despawn();
@@ -223,6 +233,7 @@ public class Lab : MonoBehaviour
                 if (dist <= touch && a.FreeValence > 0 && b.FreeValence > 0)
                 {
                     Bond.Create(a, b);
+                    ReactOnBond(a, b);
                     changed = true;
                 }
                 else if (dist <= touch * 0.95f && (a.FreeValence == 0 || b.FreeValence == 0))
@@ -287,15 +298,74 @@ public class Lab : MonoBehaviour
             m.FreeLeft = free;
             Mols.Add(m);
 
+            if (m.Atoms.Count > 2 && IsAlkaliInWater(m)) { Explode(m); continue; }
+
             if (m.Info != null && m.Atoms.Count > 1 && !Discovered.Contains(m.Formula))
             {
                 Discovered.Add(m.Formula);
+                Fx.Chime();
+                Fx.Flash(m.Center, new Color(0.5f, 1f, 0.6f), 7f, 10f, 0.7f);
+                Fx.Sparks(m.Center, new Color(0.55f, 1f, 0.65f), 60, 4.5f, 0.11f);
                 Score += 10 + m.Atoms.Count * 2;
                 Say("ОТКРЫТО: " + m.Info.Name + " (" + m.Formula + ") — " + m.Info.Note, new Color(0.6f, 1f, 0.6f));
                 CheckQuests(m.Formula);
                 SaveProgress();
             }
         }
+    }
+
+
+    // ==================== реакции ====================
+
+    /// <summary>Бурная встреча двух атомов. Правило настоящее и простое: щелочной металл с
+    /// галогеном или кислородом соединяется со вспышкой и хлопком — так натрий горит в хлоре
+    /// жёлтым пламенем. Вещество при этом ОСТАЁТСЯ: вспышка сопровождает рождение соли,
+    /// а не ломает её.</summary>
+    void ReactOnBond(Atom a, Atom b)
+    {
+        bool violent =
+            (a.El.Class == Elements.Cls.Alkali && (b.El.Class == Elements.Cls.Halogen || b.El.Sym == "O")) ||
+            (b.El.Class == Elements.Cls.Alkali && (a.El.Class == Elements.Cls.Halogen || a.El.Sym == "O"));
+        if (!violent) return;
+
+        Vector3 p = (a.transform.position + b.transform.position) * 0.5f;
+        Fx.Boom();
+        Fx.Flash(p, new Color(1f, 0.85f, 0.4f), 9f, 11f, 0.6f);
+        Fx.Sparks(p, new Color(1f, 0.75f, 0.25f), 70, 6.5f, 0.13f);
+        Atom metal = a.El.Class == Elements.Cls.Alkali ? a : b;
+        Say(metal.El.Name + " вспыхнул: щелочные металлы соединяются бурно, со светом и жаром.",
+            new Color(1f, 0.85f, 0.5f));
+    }
+
+    /// <summary>Взрыв собранного: щелочной металл в воде. Связи рвутся, атомы разлетаются —
+    /// ровно то, что делает кусочек натрия, брошенный в стакан.</summary>
+    void Explode(Mol m)
+    {
+        Fx.Boom();
+        Fx.Flash(m.Center, new Color(1f, 0.7f, 0.3f), 14f, 16f, 0.8f);
+        Fx.Sparks(m.Center, new Color(1f, 0.6f, 0.2f), 140, 9f, 0.16f);
+        foreach (var a in m.Atoms)
+        {
+            for (int i = a.Bonds.Count - 1; i >= 0; i--) a.Bonds[i].Break();
+            Vector3 dir = (a.transform.position - m.Center).normalized;
+            if (dir.sqrMagnitude < 0.01f) dir = Random.onUnitSphere;
+            a.Body.AddForce(dir * 14f, ForceMode.VelocityChange);
+        }
+        Say("ВЗРЫВ: щелочной металл в воде. Так натрий и ведёт себя в стакане — вспышка и разлёт.",
+            new Color(1f, 0.6f, 0.4f));
+    }
+
+    /// <summary>Есть ли в молекуле щелочной металл вместе с водой (и кислород, и водород).</summary>
+    static bool IsAlkaliInWater(Mol m)
+    {
+        bool alkali = false, o = false, h = false;
+        foreach (var a in m.Atoms)
+        {
+            if (a.El.Class == Elements.Cls.Alkali) alkali = true;
+            if (a.El.Sym == "O") o = true;
+            if (a.El.Sym == "H") h = true;
+        }
+        return alkali && o && h;
     }
 
     void CheckQuests(string formula)

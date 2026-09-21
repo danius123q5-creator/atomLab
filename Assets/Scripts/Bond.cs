@@ -27,6 +27,13 @@ public class Bond : MonoBehaviour
         a.Bonds.Add(bo); b.Bonds.Add(bo);
         All.Add(bo);
         bo.Rebuild();
+
+        // Отклик: щелчок тем ниже, чем тяжелее пара, и щепоть искр в месте стыка.
+        Vector3 mid = (a.transform.position + b.transform.position) * 0.5f;
+        float heavy = Mathf.Clamp01((a.El.Mass + b.El.Mass) / 300f);
+        Fx.Pop(Mathf.Lerp(1.25f, 0.65f, heavy));
+        Fx.Sparks(mid, bo.Ionic ? new Color(1f, 0.8f, 0.3f) : new Color(0.85f, 0.95f, 1f), 14, 2.2f);
+        Fx.Flash(mid, bo.Ionic ? new Color(1f, 0.8f, 0.3f) : Color.white, 2.2f, 4f, 0.22f);
         return bo;
     }
 
@@ -37,6 +44,10 @@ public class Bond : MonoBehaviour
         if (A.FreeValence < 1 || B.FreeValence < 1) return false;
         Order++;
         Rebuild();
+        Vector3 m = (A.transform.position + B.transform.position) * 0.5f;
+        Fx.Pop(1.45f);
+        Fx.Sparks(m, new Color(0.7f, 1f, 0.9f), 20, 3f);
+        Fx.Flash(m, new Color(0.7f, 1f, 0.9f), 3f, 4.5f, 0.25f);
         return true;
     }
 

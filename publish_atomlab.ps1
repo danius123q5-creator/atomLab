@@ -112,9 +112,11 @@ for ($try = 1; $try -le 3; $try++) {
 
 # Journal of what actually went out: name, size, sha256. Costs a millisecond, answers later
 # the question "is this the same build".
-$h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+# NOT $h: PowerShell variable names ignore case, so $h silently overwrote the header table
+# $H and the verification call died with "cannot bind parameter Headers".
+$sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 Add-Content -Path (Join-Path $root "published_hashes.txt") -Encoding UTF8 `
-    -Value ("{0}  {1}  {2} bytes  sha256:{3}  {4}" -f $Ver, $name, (Get-Item $zip).Length, $h, (Get-Date).ToString("yyyy-MM-dd HH:mm"))
+    -Value ("{0}  {1}  {2} bytes  sha256:{3}  {4}" -f $Ver, $name, (Get-Item $zip).Length, $sha, (Get-Date).ToString("yyyy-MM-dd HH:mm"))
 
 # Read the release BACK from GitHub - do not trust the POST alone.
 $check = Invoke-RestMethod -Uri "https://api.github.com/repos/$owner/$repoName/releases/tags/$Ver" -Headers $H -Proxy $proxy -TimeoutSec 60

@@ -113,6 +113,7 @@ public class LabUI : MonoBehaviour
         DrawPanel(cw, ch);
         DrawHud();
         DrawFormulaCard();
+        DrawZoneButtons();
         DrawCarry(e);
     }
 
@@ -390,11 +391,14 @@ public class LabUI : MonoBehaviour
     /// Показывает САМУЮ КРУПНУЮ молекулу в зоне: формулу, название и строчку про неё.
     /// Прижата не к краю экрана, а к краю СВОБОДНОЙ части: под открытой панелью её было бы
     /// просто не видно, панель непрозрачная.</summary>
+    float cardHeight;           // высота карточки формулы: по ней кнопки находят свой ряд
+
     void DrawFormulaCard()
     {
         var lab = Lab.I;
         if (lab == null) return;
 
+        cardHeight = 0f;
         Lab.Mol best = null;
         foreach (var m in lab.Mols)
             if (m.Atoms.Count > 1 && (best == null || m.Atoms.Count > best.Atoms.Count)) best = m;
@@ -404,6 +408,7 @@ public class LabUI : MonoBehaviour
         float w = Mathf.Min(430f, Screen.width - x - 20f);
         if (w < 160f) return;
         float h = best.Info != null ? 104f : 78f;
+        cardHeight = h;
         var r = new Rect(x, Screen.height - h - 20f, w, h);
 
         GUI.color = new Color(0f, 0f, 0f, 0.6f);
@@ -426,6 +431,23 @@ public class LabUI : MonoBehaviour
                 "Такого вещества в справочнике нет — слепить можно, а в природе такая связка не живёт.\nАтомов: " + best.Atoms.Count +
                 ", свободных связей: " + best.FreeLeft + ".", sSmall);
         }
+    }
+
+
+    /// <summary>Кнопки зоны — слева внизу, НАД карточкой формулы (🔴 21.09, просьба
+    /// владельца). Держатся над карточкой, а не на месте: карточка растёт, когда вещество
+    /// узнано, и кнопки уезжали бы под неё.</summary>
+    void DrawZoneButtons()
+    {
+        var lab = Lab.I;
+        if (lab == null) return;
+
+        float x = PanelRightPx + 20f;
+        if (Screen.width - x < 200f) return;
+        float y = Screen.height - cardHeight - 20f - 34f;
+
+        if (GUI.Button(new Rect(x, y, 140f, 28f), "Убрать атомы", sTab)) lab.ClearZone();
+        if (GUI.Button(new Rect(x + 148f, y, 140f, 28f), "Перезапуск", sTab)) lab.RestartLab();
     }
 
     void DrawCarry(Event e)
