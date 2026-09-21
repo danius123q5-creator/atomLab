@@ -37,8 +37,9 @@ public static class BuildScript
         // откажется ставить новую поверх старой.
         PlayerSettings.bundleVersion = Updater.Version;
         var vp = Updater.Version.Split('.');
-        int vmaj = 0, vmin = 0; int.TryParse(vp[0], out vmaj); if (vp.Length > 1) int.TryParse(vp[1], out vmin);
-        PlayerSettings.Android.bundleVersionCode = Mathf.Max(PlayerSettings.Android.bundleVersionCode, vmaj * 100 + vmin);
+        int vmaj = 0, vmin = 0, vpat = 0; int.TryParse(vp[0], out vmaj); if (vp.Length > 1) int.TryParse(vp[1], out vmin); if (vp.Length > 2) int.TryParse(vp[2], out vpat);
+        // 2.5.1 -> 20501: третья цифра тоже двигает код, иначе 2.5.1 и 2.5 получили бы один и тот же.
+        PlayerSettings.Android.bundleVersionCode = Mathf.Max(PlayerSettings.Android.bundleVersionCode, vmaj * 10000 + vmin * 100 + vpat);
         PlayerSettings.SplashScreen.show = false;
         PlayerSettings.SplashScreen.showUnityLogo = false;
     }

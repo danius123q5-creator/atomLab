@@ -189,7 +189,7 @@ public static class MolFacts
             string how = (add.Count > 0 ? Lang.T("добавь ", "add ") + string.Join(", ", add.ToArray()) : "") +
                          (add.Count > 0 && rem.Count > 0 ? Lang.T(" и ", " and ") : "") +
                          (rem.Count > 0 ? Lang.T("убери ", "remove ") + string.Join(", ", rem.ToArray()) : "");
-            tips.Add(Lang.T("ближе всего настоящее ", "the nearest real substance is ") + Lang.Name(best) + " (" + best.Formula + "): " + how);
+            tips.Add(Lang.T("ближе всего настоящее вещество — ", "the nearest real substance is ") + Lang.Name(best).ToLower() + " (" + best.Formula + "): " + how);
         }
         if (best == null || bestCost / 4 > Mathf.Max(3, total / 5))
             tips.Add(Lang.T("до настоящего вещества отсюда далеко — такие большие случайные сборки в природе не встречаются; начни с ядра поменьше",
