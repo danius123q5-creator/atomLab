@@ -20,6 +20,7 @@ public static class Fx
         src = go.AddComponent<AudioSource>();
         src.spatialBlend = 0f;       // звук интерфейсный, без панорамы: иначе он «уезжает» за камерой
         src.volume = 0.45f;
+        if (SelfTest.Requested) { src.mute = true; src.volume = 0f; }   // проверка молчит (21.09)
         return src;
     }
 

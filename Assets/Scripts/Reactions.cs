@@ -136,8 +136,8 @@ public static class Reactions
         var c = new Dictionary<string, int>();
         foreach (var a in m.Atoms)
         {
-            int n; c.TryGetValue(a.El.Sym, out n);
-            c[a.El.Sym] = n + 1;
+            int n; c.TryGetValue(a.El.ChemSym, out n);
+            c[a.El.ChemSym] = n + 1;
         }
         return c;
     }

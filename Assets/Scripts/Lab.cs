@@ -302,6 +302,8 @@ public class Lab : MonoBehaviour
         // На стенде вещей мышь двигает стаканы, а не атомы: иначе каждый клик по столу
         // заодно тянул бы рамку выделения в зоне молекул.
         if (PhysLab.I != null && PhysLab.I.Active) return;
+        // Выбран нагрев или холод — мышь (палец) принадлежит инструменту, а не атомам.
+        if (Thermo.I != null && Thermo.I.HandleInput(overPanel)) return;
 
         // Второй палец лёг — это жест камеры, а не перетаскивание и не рамка. Первый палец
         // успел схватить атом или начать рамку за кадр-другой до второго: отменяем, рамку —
@@ -746,8 +748,8 @@ public class Lab : MonoBehaviour
             int free = 0;
             foreach (var a in m.Atoms)
             {
-                int c; counts.TryGetValue(a.El.Sym, out c);
-                counts[a.El.Sym] = c + 1;
+                int c; counts.TryGetValue(a.El.ChemSym, out c);
+                counts[a.El.ChemSym] = c + 1;
                 sum += a.transform.position;
                 free += a.FreeValence;
             }
@@ -862,7 +864,7 @@ public class Lab : MonoBehaviour
     /// пишется в файл: элементы с местами и связи с кратностями. Сохраняем сами — каждые
     /// восемь секунд, если что-то менялось, и при выходе. Ручной кнопки нет нарочно: терялось
     /// бы именно то, что забыли нажать.</summary>
-    string ZonePath { get { return System.IO.Path.Combine(Application.persistentDataPath, "zone.txt"); } }
+    string ZonePath { get { return System.IO.Path.Combine(SelfTest.DataDir, "zone.txt"); } }
 
     float saveTimer = 8f;
     bool zoneDirty;
@@ -899,6 +901,17 @@ public class Lab : MonoBehaviour
         catch (System.Exception e) { Debug.LogWarning(Lang.T("Не вышло сохранить зону: ", "Could not save the zone: ") + e.Message); }
     }
 
+    /// <summary>Восстановить зону ПОСЛЕ того, как загрузились добытые в ускорителе и собранные
+    /// элементы (их регистрируют Start() ускорителя и сборки). Раньше зона читалась раньше —
+    /// и атомы Uue или O-18 не узнавались и пропадали (ревью Саула, 21.09).</summary>
+    public void LoadZoneLater() { StartCoroutine(LoadZoneAfterStart()); }
+
+    System.Collections.IEnumerator LoadZoneAfterStart()
+    {
+        yield return null;          // к этому кадру все Start() отработали
+        LoadZone();
+    }
+
     public void LoadZone()
     {
         try
@@ -906,24 +919,33 @@ public class Lab : MonoBehaviour
             if (!System.IO.File.Exists(ZonePath)) return;
             var lines = System.IO.File.ReadAllLines(ZonePath);
             var made = new List<Atom>();
+            int lost = 0;
             foreach (var line in lines)
             {
                 var p = line.Split(' ');
-                if (p.Length == 5 && p[0] == "a")
+                // 21.09, ревью Саула. Две дыры в одном месте:
+                //  • символ иона с пробелом («Fe-56 3+») давал шесть частей вместо пяти — строка
+                //    молча выпадала. Теперь координаты берём с КОНЦА, символ — всё, что между;
+                //  • выпавший атом сдвигал индексы, и связи доставались ЧУЖИМ атомам. Теперь на
+                //    месте неизвестного атома стоит пустышка: индексы не едут, его связи пропускаются.
+                if (p.Length >= 5 && p[0] == "a")
                 {
-                    var el = Elements.BySymbol(p[1]);
-                    if (el == null) continue;
+                    string sym = string.Join(" ", p, 1, p.Length - 4);
+                    var el = Elements.BySymbol(sym);
+                    if (el == null) { made.Add(null); lost++; continue; }
                     made.Add(Atom.Spawn(el, new Vector3(
-                        float.Parse(p[2], System.Globalization.CultureInfo.InvariantCulture),
-                        float.Parse(p[3], System.Globalization.CultureInfo.InvariantCulture),
-                        float.Parse(p[4], System.Globalization.CultureInfo.InvariantCulture))));
+                        float.Parse(p[p.Length - 3], System.Globalization.CultureInfo.InvariantCulture),
+                        float.Parse(p[p.Length - 2], System.Globalization.CultureInfo.InvariantCulture),
+                        float.Parse(p[p.Length - 1], System.Globalization.CultureInfo.InvariantCulture))));
                 }
                 else if (p.Length == 4 && p[0] == "b")
                 {
                     int i = int.Parse(p[1]), j = int.Parse(p[2]), o = int.Parse(p[3]);
-                    if (i >= 0 && i < made.Count && j >= 0 && j < made.Count) Bond.Create(made[i], made[j], o);
+                    if (i >= 0 && i < made.Count && j >= 0 && j < made.Count && made[i] != null && made[j] != null) Bond.Create(made[i], made[j], o);
                 }
             }
+            if (lost > 0) Debug.LogWarning("зона: не узнано атомов " + lost);
+            made.RemoveAll(x => x == null);
             if (made.Count > 0)
             {
                 Recompute();

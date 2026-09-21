@@ -131,7 +131,7 @@ public static class Chemistry
         foreach (var a in Atom.All)
         {
             List<Atom> l;
-            if (!pool.TryGetValue(a.El.Sym, out l)) { l = new List<Atom>(); pool[a.El.Sym] = l; }
+            if (!pool.TryGetValue(a.El.ChemSym, out l)) { l = new List<Atom>(); pool[a.El.ChemSym] = l; }
             l.Add(a);
         }
 

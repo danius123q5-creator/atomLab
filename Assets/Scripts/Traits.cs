@@ -39,20 +39,26 @@ public class Traits : MonoBehaviour
                 if (a.El.Paint != Elements.Paint.Radioactive && a.El.Paint != Elements.Paint.Unknown) continue;
                 Fx.Sparks(a.transform.position, new Color(0.45f, 1f, 0.5f), 6, 1.6f, 0.05f);
 
-                // Изредка — настоящий распад: минус два протона, элемент меняется.
-                if (Random.value < 0.06f && a.El.Z > 2)
+                // Изредка — настоящий распад, и его ВИДНО (21.09, владелец: «анимация потери
+                // ионов/протонов при распаде», Саул): вылетающие частицы рисует DecayFx.
+                // Технеций и прометий распадаются БЕТА-распадом (нейтрон → протон + электрон,
+                // элемент на клетку правее): Tc-99 становится рутением, а не ниобием, как вышло
+                // бы по альфа-правилу. Остальные — альфа (минус 2 протона и 2 нейтрона).
+                if (Random.value < 0.06f && a.El.Z > 2 && !a.El.Assembled)
                 {
-                    var next = Elements.ByZ(a.El.Z - 2);
+                    bool beta = a.El.Z == 43 || a.El.Z == 61;
+                    var next = Elements.ByZ(beta ? a.El.Z + 1 : a.El.Z - 2);
                     if (next != null)
                     {
-                        Fx.Flash(a.transform.position, new Color(0.5f, 1f, 0.6f), 5f, 7f, 0.4f);
-                        Fx.Sparks(a.transform.position, new Color(0.6f, 1f, 0.7f), 40, 5f);
-                        Fx.Pop(1.6f);
-                        string was = a.El.Name;
+                        var from = a.El;
+                        if (beta) DecayFx.BetaMinus(a, from, next);
+                        else DecayFx.Alpha(a, from, next);
                         a.Become(next);
                         if (Lab.I != null)
-                            Lab.I.Say(was + Lang.T(" распался: минус два протона — теперь это ", " decayed: minus two protons — now it is ") + next.Name + ".",
-                                new Color(0.6f, 1f, 0.7f));
+                            Lab.I.Say(from.Name + (beta
+                                    ? Lang.T(" — бета-распад: нейтрон стал протоном, вылетел электрон. Теперь это ", " — beta decay: a neutron became a proton, an electron flew out. Now it is ")
+                                    : Lang.T(" — альфа-распад: вылетели 2 протона и 2 нейтрона (ядро гелия). Теперь это ", " — alpha decay: 2 protons and 2 neutrons flew out (a helium nucleus). Now it is "))
+                                + next.Name + ".", new Color(0.6f, 1f, 0.7f));
                     }
                 }
             }

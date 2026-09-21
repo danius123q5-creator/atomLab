@@ -188,7 +188,7 @@ public class AtomBuilder : MonoBehaviour
 
     // ==================== собранное не теряется ====================
 
-    string Path { get { return System.IO.Path.Combine(Application.persistentDataPath, "assembled.txt"); } }
+    string Path { get { return System.IO.Path.Combine(SelfTest.DataDir, "assembled.txt"); } }
 
     public void SaveAssembled()
     {

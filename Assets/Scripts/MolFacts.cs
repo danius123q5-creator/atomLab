@@ -75,7 +75,7 @@ public static class MolFacts
         var metals = new List<string>();
         var have = new HashSet<string>();
         var cnt = new Dictionary<string, int>();
-        foreach (var a in m.Atoms) { int c0; cnt.TryGetValue(a.El.Sym, out c0); cnt[a.El.Sym] = c0 + 1; }
+        foreach (var a in m.Atoms) { int c0; cnt.TryGetValue(a.El.ChemSym, out c0); cnt[a.El.ChemSym] = c0 + 1; }
         bool metalMetal = false;
         foreach (var a in m.Atoms)
         {
@@ -149,7 +149,7 @@ public static class MolFacts
         var metals = new List<string>();
         foreach (var a in m.Atoms)
         {
-            int c0; have.TryGetValue(a.El.Sym, out c0); have[a.El.Sym] = c0 + 1;
+            int c0; have.TryGetValue(a.El.ChemSym, out c0); have[a.El.ChemSym] = c0 + 1;
             if (IsMetal(a.El) && !metals.Contains(a.El.Sym)) metals.Add(a.El.Sym);
         }
         var tips = new List<string>();

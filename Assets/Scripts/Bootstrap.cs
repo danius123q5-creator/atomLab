@@ -70,12 +70,13 @@ public static class Bootstrap
         labGo.AddComponent<Traits>();
         labGo.AddComponent<Accelerator>();
         labGo.AddComponent<AtomBuilder>();
+        labGo.AddComponent<Thermo>();         // нагрев и заморозка атомов
         labGo.AddComponent<Updater>();        // «вышла новая версия — скачать»
         labGo.AddComponent<PhysLab>();        // этаж выше: вещи из вещества (стакан, натрий, колбы)
         labGo.AddComponent<QuarkLab>();       // этаж ниже: кварки    // стенд сборки: протоны, нейтроны, электроны   // стенд синтеза: два гнезда и результат      // характеры элементов: магнетизм, распад, жадность галогенов
 
         if (SelfTest.Requested) labGo.AddComponent<SelfTest>();
-        else lab.LoadZone();               // в проверке начинаем с чистой зоны, иначе она увидит чужое
+        else lab.LoadZoneLater();          // в проверке начинаем с чистой зоны; игроку — после загрузки своих элементов
 
         lab.Say(Lang.T("Тяни элемент из таблицы слева в зону. Начни с водорода и кислорода.", "Drag an element from the table into the zone. Start with hydrogen and oxygen."), new Color(0.8f, 0.9f, 1f));
     }

@@ -172,7 +172,7 @@ public class Accelerator : MonoBehaviour
 
     // ==================== добытое не теряется ====================
 
-    string Path { get { return System.IO.Path.Combine(Application.persistentDataPath, "synthetic.txt"); } }
+    string Path { get { return System.IO.Path.Combine(SelfTest.DataDir, "synthetic.txt"); } }
 
     public void SaveSynthetic()
     {

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections;
 using UnityEngine;
 
@@ -35,11 +36,30 @@ public class SelfTest : MonoBehaviour
     /// удаление из корутины успевало опоздать: прерванный прогон оставлял записи, следующий
     /// находил их уже в таблице и объявлял сломанным синтез. Awake у всех выполняется раньше
     /// любого Start, поэтому здесь опоздать нельзя.</summary>
+    /// <summary>🔴 21.09, владелец: «почему я слышу звуки игры?! игра выключена!» — и хуже, что
+    /// выяснилось следом: проверка удаляла зону, добытые и собранные элементы ИГРОКА — они
+    /// лежали в той же папке. Теперь у проверки своя папка selftest\ внутри, и игрок её не видит.
+    /// Всё, что игра хранит файлами, берёт путь отсюда.</summary>
+    public static string DataDir
+    {
+        get
+        {
+            if (!Requested) return Application.persistentDataPath;
+            string d = System.IO.Path.Combine(Application.persistentDataPath, "selftest");
+            try { System.IO.Directory.CreateDirectory(d); } catch { }
+            return d;
+        }
+    }
+
     void Awake()
     {
+        // Проверка идёт в фоне, но -nographics звук НЕ выключает: взрывы, хлопки и аккорды
+        // опытов летели в колонки. Полная тишина с первого кадра.
+        AudioListener.volume = 0f;
+        AudioListener.pause = true;
         foreach (var f in new[] { "synthetic.txt", "assembled.txt", "zone.txt" })
         {
-            try { System.IO.File.Delete(System.IO.Path.Combine(Application.persistentDataPath, f)); }
+            try { System.IO.File.Delete(System.IO.Path.Combine(DataDir, f)); }
             catch { }
         }
     }
@@ -67,6 +87,14 @@ public class SelfTest : MonoBehaviour
         var sb = new System.Text.StringBuilder();
         foreach (var m in lab.Mols) sb.Append(m.Formula).Append(' ');
         return sb.ToString().Trim();
+    }
+
+    /// <summary>Перенести группу атомов так, чтобы её центр оказался в точке to (форма цела).</summary>
+    static void MoveGroup(List<Atom> g, Vector3 to)
+    {
+        if (g.Count == 0) return;
+        Vector3 cen = Vector3.zero; foreach (var a in g) cen += a.transform.position; cen /= g.Count;
+        foreach (var a in g) { a.transform.position += to - cen; a.Body.position = a.transform.position; a.Body.linearVelocity = Vector3.zero; }
     }
 
     IEnumerator Start()
@@ -160,6 +188,29 @@ public class SelfTest : MonoBehaviour
         }
         lab.ClearZone();
         Debug.Log("SELFTEST popular bad=" + popBad + " of " + Presets.Grid.Length);
+
+        // 21.09: нагрев рвёт связи, холод останавливает.
+        var th = Thermo.I;
+        if (th != null)
+        {
+            lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+            Presets.SpawnPopular(new Presets.Pop { Formula = "H2O", Ru = "вода", En = "water" });
+            yield return new WaitForSeconds(0.3f);
+            Atom thO = null; foreach (var at in Atom.All) if (at.El.Sym == "O") thO = at;
+            int thBefore = thO.Bonds.Count;
+            th.Scripted = true; th.Current = Thermo.Tool.Heat; th.Strength = 1f; th.Radius = 3f; th.Point = thO.transform.position; th.Applying = true;
+            yield return new WaitForSeconds(2.5f);
+            th.Applying = false; th.Current = Thermo.Tool.None;
+            int thAfter = thO.Bonds.Count;
+            foreach (var at in Atom.All) at.Body.linearVelocity = Random.onUnitSphere * 5f;
+            th.ZoneCold = true;
+            yield return new WaitForSeconds(1.0f);
+            float vmax = 0f; foreach (var at in Atom.All) vmax = Mathf.Max(vmax, at.Body.linearVelocity.magnitude);
+            th.ZoneCold = false; th.Scripted = false;
+            bool thOk = thAfter < thBefore && vmax < 0.5f;
+            Debug.Log("SELFTEST thermo: связей у O до нагрева " + thBefore + ", после " + thAfter + " | скорость после охлаждения зоны " + vmax.ToString("0.00") + (thOk ? " OK" : " MISMATCH"));
+            lab.ClearZone();
+        }
 
         // 21.09: уровни точности.
         lab.ClearZone(); yield return new WaitForSeconds(0.15f);
@@ -345,10 +396,14 @@ public class SelfTest : MonoBehaviour
         Presets.SpawnPopular(new Presets.Pop { Formula = "NaHCO3", Ru = "сода", En = "soda" });
         // Разводим: обе молекулы рождаются около центра со случайным сдвигом и слипались в одну
         // (C3H5NaO5) ещё до реакции — проверка мерила слипание, а не правило.
-        foreach (var at in Atom.All) { at.transform.position += Vector3.left * 3.2f; at.Body.position = at.transform.position; }
+        // Переносим молекулу ЦЕЛИКОМ в своё место: центр — точка c слева на 3. Прежний сдвиг по
+        // порогу координаты иногда цеплял не ту молекулу, и тест плавал (1 раз из 6).
+        var sodaAtoms = new List<Atom>(Atom.All);
+        MoveGroup(sodaAtoms, c + Vector3.left * 3f);
         yield return new WaitForSeconds(0.2f);
         Presets.SpawnPopular(new Presets.Pop { Formula = "C2H4O2", Ru = "уксус", En = "vinegar" });
-        foreach (var at in Atom.All) if (at.transform.position.x > c.x - 1.6f) { at.transform.position += Vector3.right * 1.8f; at.Body.position = at.transform.position; }
+        var vinAtoms = new List<Atom>(); foreach (var at in Atom.All) if (!sodaAtoms.Contains(at)) vinAtoms.Add(at);
+        MoveGroup(vinAtoms, c + Vector3.right * 3f);
         yield return new WaitForSeconds(0.4f);
         lab.Recompute();
         foreach (var mm in lab.Mols) { var spc = Reactions.Classify(mm); Debug.Log("SELFTEST classify " + mm.Formula + " -> " + spc.Kind + " остаток=" + (spc.Residue != null ? spc.Residue.Name : "-") + " металл=" + (spc.Metal ?? "-")); }
@@ -406,10 +461,14 @@ public class SelfTest : MonoBehaviour
         // и смотрим, ЧТО движок из этого собрал и не завис ли он.
         lab.ClearZone();
         yield return new WaitForSeconds(0.2f);
-        for (int i = 0; i < 2; i++) Atom.Spawn(Elements.BySymbol("C"), c + new Vector3(-2.5f + i, 1.5f, 0f));
-        for (int i = 0; i < 6; i++) Atom.Spawn(Elements.BySymbol("H"), c + new Vector3(-2f + i * 0.9f, -1.5f, 1f));
-        Atom.Spawn(Elements.BySymbol("O"), c + new Vector3(2.5f, 1.5f, -1f));
-        Atom.Spawn(Elements.BySymbol("Na"), c + new Vector3(3.2f, -1.5f, 1.2f));
+        // 21.09 (ревью Саула): атомы стояли в единице друг от друга и слипались ЕЩЁ ДО реакции
+        // (отсюда C2 в итоге). Разносим по кругу, чтобы тест мерил реакцию, а не касание.
+        string[] rsyms = { "C", "C", "H", "H", "H", "H", "H", "H", "O", "Na" };
+        for (int i = 0; i < rsyms.Length; i++)
+        {
+            float ang = i * Mathf.PI * 2f / rsyms.Length;
+            Atom.Spawn(Elements.BySymbol(rsyms[i]), c + new Vector3(Mathf.Cos(ang) * 4.2f, Mathf.Sin(ang) * 2.4f, (i % 2 == 0 ? 1.5f : -1.5f)));
+        }
         yield return new WaitForSeconds(0.4f);
         float t0 = Time.realtimeSinceStartup;
         Chemistry.React();
@@ -418,7 +477,11 @@ public class SelfTest : MonoBehaviour
         lab.Recompute();
         string res = "";
         foreach (var m in lab.Mols) res += m.Formula + "(" + m.Atoms.Count + ") ";
-        Debug.Log("SELFTEST react: " + res.Trim() + "   time=" + ms.ToString("0.0") + " ms");
+        // Ожидание, которого раньше не было: реакция не имеет права оставить МОЛЕКУЛУ со
+        // свободными связями (радикал вроде C2). Одиночные атомы — можно: им просто не хватило пары.
+        int radicals = 0; string radNames = "";
+        foreach (var m in lab.Mols) if (m.Atoms.Count > 1 && m.FreeLeft > 0) { radicals++; radNames += m.Formula + " "; }
+        Debug.Log("SELFTEST react: " + res.Trim() + "   time=" + ms.ToString("0.0") + " ms | молекул со свободными связями " + radicals + " " + radNames + (radicals == 0 ? "OK" : "MISMATCH"));
         lab.ClearZone();
 
         // Шестой случай: ускоритель. Склейка ядер — это арифметика, и она обязана сходиться:
@@ -444,7 +507,7 @@ public class SelfTest : MonoBehaviour
                       " вэтаблице=" + (Elements.All.Length - before) + (synthOk ? " OK" : " MISMATCH"));
 
             // Проверка не должна оставлять свой мусор в настоящей таблице владельца.
-            try { System.IO.File.Delete(System.IO.Path.Combine(Application.persistentDataPath, "synthetic.txt")); } catch { }
+            try { System.IO.File.Delete(System.IO.Path.Combine(DataDir, "synthetic.txt")); } catch { }
             acc.Result = null;
         }
 
@@ -460,6 +523,8 @@ public class SelfTest : MonoBehaviour
             isoOk = iso != null && iso.Assembled && iso.Sym == "O-18" && iso.MassNumber == 18 && iso.Charge == 0;
             Debug.Log("SELFTEST build O+10n: " + (iso != null ? iso.Sym + " A=" + iso.MassNumber + " заряд=" + iso.Charge : "нет") +
                       (isoOk ? " OK" : " MISMATCH"));
+            // 21.09 (ревью Саула): изотоп химически тот же элемент. O-18 должен считаться кислородом.
+            Debug.Log("SELFTEST chemsym: " + (iso != null ? iso.Sym + " -> " + iso.ChemSym : "нет изотопа") + ((iso != null && iso.ChemSym == "O") ? " OK" : " MISMATCH"));
 
             bld.Protons = 26; bld.Neutrons = 30; bld.Electrons = 23;
             var ion = bld.SaveToTable();
@@ -468,7 +533,7 @@ public class SelfTest : MonoBehaviour
                       (ionOk ? " OK" : " MISMATCH"));
 
             // Проверка не оставляет своих записей в настоящей таблице владельца.
-            try { System.IO.File.Delete(System.IO.Path.Combine(Application.persistentDataPath, "assembled.txt")); } catch { }
+            try { System.IO.File.Delete(System.IO.Path.Combine(DataDir, "assembled.txt")); } catch { }
         }
 
         // Восьмой случай: НАСТОЯЩИЕ реакции. Свойства должны решать, а не наличие атомов.

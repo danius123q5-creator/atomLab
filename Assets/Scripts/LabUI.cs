@@ -40,6 +40,7 @@ public class LabUI : MonoBehaviour
         {
             if (carrying != null || drag == DragKind.Panel) return true;
             if (updRect.width > 0f && updRect.Contains(MouseGui)) return true;   // плашка обновления
+            if (thermoRect.width > 0f && thermoRect.Contains(MouseGui)) return true;   // панель нагрева
             if (menuAtom != null &&
                 MenuRect.Contains(MouseGui)) return true;
             if ((replaceTarget != null || pendingSlot >= 0) &&
@@ -199,6 +200,7 @@ public class LabUI : MonoBehaviour
 
         HandleInput(e);
 
+        DrawColdTint();
         DrawWorldLabels();
         DrawSelection();
         DrawPanel(cw, ch);
@@ -209,6 +211,7 @@ public class LabUI : MonoBehaviour
         DrawBuilder();
         DrawQuarks();
         DrawPhys();
+        DrawThermo();
         DrawPicker();
         DrawMenu();
         DrawCarry(e);
@@ -762,6 +765,86 @@ public class LabUI : MonoBehaviour
 
     Rect updRect;
 
+    // ==================== нагрев и заморозка (21.09, владелец) ====================
+
+    Rect thermoRect;
+    bool thermoOpen = !Application.isMobilePlatform;   // на телефоне свёрнута: место дорого
+
+    /// <summary>Синий оттенок охлаждённой зоны — поверх мира, под интерфейсом.</summary>
+    void DrawColdTint()
+    {
+        var t = Thermo.I;
+        if (t == null || !t.ZoneCold || accelOn || builderOn || quarkOn || physOn) return;
+        GUI.color = new Color(0.35f, 0.6f, 1f, 0.16f);
+        GUI.DrawTexture(new Rect(PanelRightGui, 0f, SW - PanelRightGui, SH), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+    }
+
+    /// <summary>Левая панель у края зоны: нагрев, холод, радиус, сила, «охладить всю зону».
+    /// Плюс круг инструмента под курсором, чтобы было видно, что попадёт под действие.</summary>
+    void DrawThermo()
+    {
+        thermoRect = new Rect();
+        var t = Thermo.I;
+        if (t == null || accelOn || builderOn || quarkOn || physOn) return;
+        float x = PanelRightGui + 10f, y = 80f, w = 200f;
+        float h = thermoOpen ? 250f : 30f;
+        var r = new Rect(x, y, w, h);
+        thermoRect = r;
+        GUI.color = new Color(0f, 0f, 0f, 0.6f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = t.ZoneCold ? new Color(0.45f, 0.75f, 1f) : new Color(1f, 0.6f, 0.3f);
+        GUI.DrawTexture(new Rect(r.x, r.y, 3f, r.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        if (GUI.Button(new Rect(r.x + 6f, r.y + 3f, w - 12f, 24f), Lang.T("Температура ", "Temperature ") + (thermoOpen ? "▾" : "▸"), sTab))
+            thermoOpen = !thermoOpen;
+        if (!thermoOpen) { t.Current = Thermo.Tool.None; return; }
+
+        float bw = (w - 20f) / 3f, yy = r.y + 32f;
+        GUI.color = t.Current == Thermo.Tool.Heat ? new Color(1f, 0.55f, 0.25f) : Color.white;
+        if (GUI.Button(new Rect(r.x + 6f, yy, bw, 26f), Lang.T("Нагрев", "Heat"), sTab)) t.Current = t.Current == Thermo.Tool.Heat ? Thermo.Tool.None : Thermo.Tool.Heat;
+        GUI.color = t.Current == Thermo.Tool.Cool ? new Color(0.45f, 0.75f, 1f) : Color.white;
+        if (GUI.Button(new Rect(r.x + 10f + bw, yy, bw, 26f), Lang.T("Холод", "Cold"), sTab)) t.Current = t.Current == Thermo.Tool.Cool ? Thermo.Tool.None : Thermo.Tool.Cool;
+        GUI.color = t.Current == Thermo.Tool.None ? new Color(0.8f, 1f, 0.8f) : Color.white;
+        if (GUI.Button(new Rect(r.x + 14f + 2f * bw, yy, bw, 26f), Lang.T("Рука", "Hand"), sTab)) t.Current = Thermo.Tool.None;
+        GUI.color = Color.white;
+        yy += 32f;
+
+        GUI.Label(new Rect(r.x + 8f, yy, w - 16f, 18f), Lang.T("Радиус: ", "Radius: ") + t.Radius.ToString("0.0"), sSmall);
+        t.Radius = GUI.HorizontalSlider(new Rect(r.x + 8f, yy + 20f, w - 16f, 16f), t.Radius, 0.4f, 4f);
+        yy += 40f;
+        GUI.Label(new Rect(r.x + 8f, yy, w - 16f, 18f), Lang.T("Сила: ", "Strength: ") + Mathf.RoundToInt(t.Strength * 100f) + "%", sSmall);
+        t.Strength = GUI.HorizontalSlider(new Rect(r.x + 8f, yy + 20f, w - 16f, 16f), t.Strength, 0.05f, 1f);
+        yy += 42f;
+
+        bool cold = GUI.Toggle(new Rect(r.x + 8f, yy, w - 16f, 22f), t.ZoneCold, Lang.T("  Охладить всю зону", "  Cool the whole zone"));
+        if (cold != t.ZoneCold)
+        {
+            t.ZoneCold = cold;
+            Lab.I.Say(cold ? Lang.T("Зона охлаждена: атомы везде замедляются и замирают.", "Zone cooled: atoms slow down and freeze everywhere.")
+                           : Lang.T("Охлаждение зоны выключено.", "Zone cooling off."), new Color(0.6f, 0.85f, 1f));
+        }
+        yy += 26f;
+        GUI.Label(new Rect(r.x + 8f, yy, w - 16f, 44f), t.Hint(), sSmall);
+
+        // круг инструмента под курсором
+        if (t.Current != Thermo.Tool.None && !PointerOverUI && Lab.I != null && Lab.I.Cam != null)
+        {
+            var cam = Lab.I.Cam;
+            Vector3 c0 = cam.WorldToScreenPoint(t.Point);
+            Vector3 c1 = cam.WorldToScreenPoint(t.Point + cam.transform.right * t.Radius);
+            if (c0.z > 0f)
+            {
+                float rad = ((Vector2)c1 - (Vector2)c0).magnitude / U;
+                var cr = new Rect(c0.x / U - rad, SH - c0.y / U - rad, rad * 2f, rad * 2f);
+                GUI.color = t.Current == Thermo.Tool.Heat ? new Color(1f, 0.45f, 0.15f, t.Applying ? 0.28f : 0.14f)
+                                                          : new Color(0.4f, 0.7f, 1f, t.Applying ? 0.28f : 0.14f);
+                GUI.DrawTexture(cr, DotTex);
+                GUI.color = Color.white;
+            }
+        }
+    }
+
     /// <summary>Плашка «вышла новая версия» под счётом (21.09, владелец: «пусть игра говорит
     /// об обновлении и качает сама»).</summary>
     void DrawUpdate()
@@ -902,8 +985,8 @@ public class LabUI : MonoBehaviour
             var counts = new Dictionary<string, int>();
             foreach (var at in best.Atoms)
             {
-                int c; counts.TryGetValue(at.El.Sym, out c);
-                counts[at.El.Sym] = c + 1;
+                int c; counts.TryGetValue(at.El.ChemSym, out c);
+                counts[at.El.ChemSym] = c + 1;
             }
             var guess = Naming.Describe(counts);
             string text;

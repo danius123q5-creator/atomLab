@@ -360,7 +360,7 @@ public static class ReactionEngine
             {
                 for (int i = at.Bonds.Count - 1; i >= 0; i--) at.Bonds[i].Break();
                 List<Atom> l;
-                if (!pool.TryGetValue(at.El.Sym, out l)) { l = new List<Atom>(); pool[at.El.Sym] = l; }
+                if (!pool.TryGetValue(at.El.ChemSym, out l)) { l = new List<Atom>(); pool[at.El.ChemSym] = l; }
                 l.Add(at);
                 where += at.transform.position; n++;
             }
@@ -393,7 +393,7 @@ public static class ReactionEngine
                 }
                 if (!ok)
                 {
-                    foreach (var at in atoms) pool[at.El.Sym].Add(at);   // вернули, что взяли
+                    foreach (var at in atoms) pool[at.El.ChemSym].Add(at);   // вернули, что взяли
                     break;
                 }
 
