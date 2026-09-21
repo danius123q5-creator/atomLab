@@ -118,6 +118,14 @@ public class SelfTest : MonoBehaviour
             string shot = System.IO.Path.Combine(DataDir, "mapshot.png");
             ScreenCapture.CaptureScreenshot(shot);
             yield return new WaitForSeconds(1f);
+            var ui = FindAnyObjectByType<LabUI>();
+            if (ui != null)
+            {
+                ui.ShowInside(Elements.BySymbol("Fe"));
+                yield return new WaitForSeconds(1.2f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(DataDir, "insideshot.png"));
+                yield return new WaitForSeconds(1f);
+            }
             Debug.Log("MAPSHOT " + shot);
             Application.Quit(0);
             yield break;
@@ -295,6 +303,16 @@ public class SelfTest : MonoBehaviour
             bool ptOk = pts.Count == 1 && Mathf.Abs(pm - 18f) < 0.2f && pts[0].Atoms == 3;
             Debug.Log("SELFTEST map-point: точек " + pts.Count + ", масса " + pm.ToString("0.00") + (ptOk ? " OK" : " MISMATCH"));
             lab.ClearZone();
+        }
+
+        // 2.5.6: оболочки для окна «внутреннее устройство».
+        {
+            string so = string.Join(",", System.Array.ConvertAll(LabUI.Shells(8, 8), x => x.ToString()));
+            string sfe = string.Join(",", System.Array.ConvertAll(LabUI.Shells(26, 26), x => x.ToString()));
+            string su = string.Join(",", System.Array.ConvertAll(LabUI.Shells(92, 92), x => x.ToString()));
+            string scu = string.Join(",", System.Array.ConvertAll(LabUI.Shells(29, 29), x => x.ToString()));
+            bool shOk = so == "2,6" && sfe == "2,8,14,2" && su == "2,8,18,32,21,9,2" && scu == "2,8,18,1";
+            Debug.Log("SELFTEST shells: O " + so + " | Fe " + sfe + " | U " + su + " | Cu " + scu + (shOk ? " OK" : " MISMATCH"));
         }
 
         // 2.5.4 (кадр владельца: из кучи вышли F2 и «AlFMn»): металлы забирают галоген в соли.

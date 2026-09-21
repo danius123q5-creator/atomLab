@@ -44,6 +44,7 @@ public class LabUI : MonoBehaviour
             if (gravRect.width > 0f && gravRect.Contains(MouseGui)) return true;       // карта притяжения
             if (menuAtom != null &&
                 MenuRect.Contains(MouseGui)) return true;
+            if (insideEl != null) return true;                  // окно устройства атома — модальное
             if ((replaceTarget != null || pendingSlot >= 0) &&
                 MouseGui.x <= PanelRightGui + 262f) return true;    // подменю справа от таблицы
             float mx = MouseGui.x;
@@ -216,6 +217,7 @@ public class LabUI : MonoBehaviour
         DrawGravity();
         DrawPicker();
         DrawMenu();
+        DrawInside();
         DrawCarry(e);
         DrawUpdate();
         DrawHoverTip();
@@ -805,7 +807,17 @@ public class LabUI : MonoBehaviour
         // Высота карты — ровно под сетку: косой вид занимает 0.9·глубину зоны, плюс провал воронок.
         Vector2 mh = Gravity.MapHalf;
         float mapS = (w - 12f - 14f) / (2f * mh.x + 0.7f * mh.y);
-        float mapH = gravOpen ? Mathf.Min(0.9f * mh.y * mapS + 64f + 14f, Mathf.Max(90f, SH - y - 120f)) : 0f;
+        float idealMap = 0.9f * mh.y * mapS + 64f + 14f;
+        // Низ панели не заходит на кнопки зоны и карточку формулы (владелец, 21.09: «поправь
+        // налезание»). Кнопки стоят над карточкой, их верх — SH - cardHeight - 54, над ними ещё
+        // строка «Выделено…». Не влезает под «Температурой» — ставим карту справа от неё.
+        float bottomLimit = SH - cardHeight - 54f - 24f;
+        if (gravOpen && thermoRect.width > 0f && y + 34f + idealMap + 42f > bottomLimit)
+        {
+            x = thermoRect.xMax + 8f;
+            y = thermoRect.y;
+        }
+        float mapH = gravOpen ? Mathf.Clamp(bottomLimit - y - 34f - 42f, 60f, idealMap) : 0f;
         float h = gravOpen ? 34f + mapH + 42f : 30f;
         var r = new Rect(x, y, w, h);
         gravRect = r;
@@ -1020,7 +1032,12 @@ public class LabUI : MonoBehaviour
 
         if (Time.time < lab.ToastUntil && !string.IsNullOrEmpty(lab.Toast))
         {
-            var tr = new Rect(panelX + W + 40f, SH - 96f, SW - (panelX + W) - 80f, 64f);
+            // Над кнопками зоны, а те — над карточкой формулы: раньше сообщение лежало поверх
+            // карточки и кнопок (фото владельца 13:08, кадр 21.09). В режимах с пультом внизу
+            // кнопок зоны нет — там остаётся прежнее место.
+            bool zoneBar = !(accelOn || builderOn || quarkOn || physOn);
+            float ty = zoneBar ? SH - cardHeight - 54f - 26f - 64f : SH - 96f;
+            var tr = new Rect(panelX + W + 40f, Mathf.Max(80f, ty), SW - (panelX + W) - 80f, 64f);
             GUI.color = new Color(0f, 0f, 0f, 0.55f);
             GUI.DrawTexture(tr, Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -1221,7 +1238,7 @@ public class LabUI : MonoBehaviour
         get
         {
             if (menuAtom == null) return new Rect();
-            int rows = 7 + (menuBondList ? menuAtom.Bonds.Count : 0) + (menuLinkList ? LinkCandidates().Count : 0);
+            int rows = 8 + (menuBondList ? menuAtom.Bonds.Count : 0) + (menuLinkList ? LinkCandidates().Count : 0);
             float w = 260f, h = 26f + rows * 24f;
             float x = Mathf.Min(menuPos.x, SW - w - 6f);
             float y = Mathf.Min(menuPos.y, SH - h - 6f);
@@ -1335,12 +1352,156 @@ public class LabUI : MonoBehaviour
         }
         y += 24f;
 
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), Lang.T("Посмотреть внутреннее устройство", "Look inside the atom"), sTab))
+        {
+            insideEl = menuAtom.El;
+            insideT0 = Time.time;
+            CloseMenu();
+            return;
+        }
+        y += 24f;
+
         if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), Lang.T("Провести реакцию", "Run reaction"), sTab))
         {
             CloseMenu();
             Chemistry.React();
             return;
         }
+    }
+
+    // ==================== внутреннее устройство атома (21.09, владелец, 2.5.6) ====================
+    // «Добавь в контекстное меню "посмотреть внутреннее устройство": показать протоны, ядро,
+    // нейтроны, электроны». Модель Бора: ядро из протонов и нейтронов в центре, вокруг оболочки,
+    // по ним бегут электроны. Число электронов на оболочках — по порядку заполнения (Маделунг).
+
+    Elements.El insideEl;
+    float insideT0;
+    public void ShowInside(Elements.El el) { insideEl = el; insideT0 = Time.time; }
+
+    /// <summary>Настоящие оболочки нейтральных атомов, у которых электроны стоят НЕ по общему
+    /// правилу (хром, медь, серебро, золото, платина, уран…). Самопроверка поймала: по правилу
+    /// у урана выходило 2·8·18·32·22·8·2, а на деле 2·8·18·32·21·9·2.</summary>
+    static readonly Dictionary<int, int[]> ShellExceptions = new Dictionary<int, int[]>
+    {
+        { 24, new[] { 2, 8, 13, 1 } },            { 29, new[] { 2, 8, 18, 1 } },
+        { 41, new[] { 2, 8, 18, 12, 1 } },        { 42, new[] { 2, 8, 18, 13, 1 } },
+        { 44, new[] { 2, 8, 18, 15, 1 } },        { 45, new[] { 2, 8, 18, 16, 1 } },
+        { 46, new[] { 2, 8, 18, 18 } },           { 47, new[] { 2, 8, 18, 18, 1 } },
+        { 57, new[] { 2, 8, 18, 18, 9, 2 } },     { 58, new[] { 2, 8, 18, 19, 9, 2 } },
+        { 64, new[] { 2, 8, 18, 25, 9, 2 } },     { 78, new[] { 2, 8, 18, 32, 17, 1 } },
+        { 79, new[] { 2, 8, 18, 32, 18, 1 } },    { 89, new[] { 2, 8, 18, 32, 18, 9, 2 } },
+        { 90, new[] { 2, 8, 18, 32, 18, 10, 2 } },{ 91, new[] { 2, 8, 18, 32, 20, 9, 2 } },
+        { 92, new[] { 2, 8, 18, 32, 21, 9, 2 } }, { 93, new[] { 2, 8, 18, 32, 22, 9, 2 } },
+        { 96, new[] { 2, 8, 18, 32, 25, 9, 2 } }, { 103, new[] { 2, 8, 18, 32, 32, 8, 3 } },
+    };
+
+    /// <summary>Электроны по оболочкам K, L, M… Подуровни заполняются в порядке Маделунга
+    /// (1s 2s 2p 3s 3p 4s 3d …), потом складываются по номеру оболочки. Для нейтральных атомов
+    /// с известными исключениями берём настоящую раскладку из таблицы выше.</summary>
+    public static int[] Shells(int electrons, int z = 0)
+    {
+        int[] known;
+        if (z > 0 && electrons == z && ShellExceptions.TryGetValue(z, out known)) return known;
+        int[,] order = { {1,0},{2,0},{2,1},{3,0},{3,1},{4,0},{3,2},{4,1},{5,0},{4,2},{5,1},{6,0},{4,3},{5,2},{6,1},{7,0},{5,3},{6,2},{7,1} };
+        var sh = new int[7];
+        int e = Mathf.Max(0, electrons);
+        for (int i = 0; i < order.GetLength(0) && e > 0; i++)
+        {
+            int take = Mathf.Min(2 * (2 * order[i, 1] + 1), e);
+            sh[order[i, 0] - 1] += take;
+            e -= take;
+        }
+        int n = 7; while (n > 0 && sh[n - 1] == 0) n--;
+        var res = new int[n];
+        System.Array.Copy(sh, res, n);
+        return res;
+    }
+
+    void DrawInside()
+    {
+        var el = insideEl;
+        if (el == null) return;
+        int z = Mathf.Max(1, el.Z);
+        int nN = Mathf.Max(0, Mathf.RoundToInt(el.Mass) - z);
+        int eCount = Mathf.Max(0, z - el.Charge);
+        var shells = Shells(eCount, z);
+
+        float w = Mathf.Min(600f, SW - 20f), h = Mathf.Min(560f, SH - 20f);
+        var r = new Rect((SW - w) * 0.5f, (SH - h) * 0.5f, w, h);
+        GUI.color = new Color(0f, 0f, 0f, 0.5f);
+        GUI.DrawTexture(new Rect(0f, 0f, SW, SH), Texture2D.whiteTexture);   // затемняем всё вокруг
+        GUI.color = new Color(0.05f, 0.06f, 0.1f, 0.98f);
+        GUI.DrawTexture(r, Texture2D.whiteTexture);
+        GUI.color = new Color(0.4f, 0.7f, 1f, 0.8f);
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 2f), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        GUI.Label(new Rect(r.x + 14f, r.y + 8f, w - 130f, 26f), Lang.T("Внутри: ", "Inside: ") + Lang.Name(el) + " (" + el.Sym + ")", sTitle);
+        if (GUI.Button(new Rect(r.xMax - 110f, r.y + 8f, 100f, 26f), Lang.T("Закрыть", "Close"), sTab)) { insideEl = null; return; }
+
+        string shellText = "";
+        for (int i = 0; i < shells.Length; i++) shellText += (i > 0 ? " · " : "") + shells[i];
+        GUI.Label(new Rect(r.x + 14f, r.y + 38f, w - 28f, 20f),
+            "<color=#ff6b5a>" + z + Lang.T(" протонов", " protons") + "</color>  ·  <color=#b8b8c0>" + nN + Lang.T(" нейтронов", " neutrons") +
+            "</color>  ·  <color=#6fd0ff>" + eCount + Lang.T(" электронов", " electrons") + "</color>" +
+            (el.Charge != 0 ? Lang.T("  (ион ", "  (ion ") + (el.Charge > 0 ? "+" : "") + el.Charge + ")" : ""), sSmall);
+        GUI.Label(new Rect(r.x + 14f, r.y + 58f, w - 28f, 20f), Lang.T("Оболочки (от ядра наружу): ", "Shells (from the nucleus out): ") + shellText, sSmall);
+
+        // ---- рисунок: центр и масштаб под размер окна ----
+        float areaTop = r.y + 82f, areaBottom = r.yMax - 48f;
+        Vector2 c = new Vector2(r.center.x, (areaTop + areaBottom) * 0.5f);
+        float maxR = Mathf.Min(w * 0.5f - 16f, (areaBottom - areaTop) * 0.5f);
+
+        // Ядро: протоны и нейтроны вперемешку, спиралью подсолнуха. Больше 120 не рисуем.
+        int total = z + nN, shown = Mathf.Min(120, total);
+        int showP = Mathf.Max(1, Mathf.RoundToInt(shown * (float)z / total)), showN = shown - showP;
+        float nucR = Mathf.Clamp(maxR * 0.28f, 18f, 70f);
+        float step = nucR / Mathf.Sqrt(Mathf.Max(1, shown));
+        float ball = Mathf.Max(5f, step * 1.9f);
+        var rnd = new System.Random(z * 1000 + nN);
+        int leftP = showP, leftN = showN;
+        for (int i = 0; i < shown; i++)
+        {
+            float rr = step * Mathf.Sqrt(i + 0.5f), ang = i * 2.39996f;
+            bool proton = leftN == 0 || (leftP > 0 && rnd.NextDouble() < (double)leftP / (leftP + leftN));
+            if (proton) leftP--; else leftN--;
+            var p = c + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rr;
+            GUI.color = proton ? new Color(0.92f, 0.3f, 0.25f) : new Color(0.7f, 0.7f, 0.75f);
+            GUI.DrawTexture(new Rect(p.x - ball * 0.5f, p.y - ball * 0.5f, ball, ball), DotTex);
+        }
+
+        // Оболочки и электроны. Внутренние бегут быстрее — как и в модели Бора.
+        float t = Time.time - insideT0;
+        float gap = (maxR - nucR - 14f) / Mathf.Max(1, shells.Length);
+        for (int k = 0; k < shells.Length; k++)
+        {
+            float rad = nucR + 14f + gap * (k + 1) - gap * 0.3f;
+            GUI.color = new Color(0.45f, 0.7f, 1f, 0.28f);
+            int dots = Mathf.Clamp(Mathf.RoundToInt(rad * 0.9f), 40, 160);
+            for (int d = 0; d < dots; d++)
+            {
+                float a = d * Mathf.PI * 2f / dots;
+                GUI.DrawTexture(new Rect(c.x + Mathf.Cos(a) * rad - 1f, c.y + Mathf.Sin(a) * rad - 1f, 2f, 2f), Texture2D.whiteTexture);
+            }
+            GUI.color = new Color(0.45f, 0.85f, 1f);
+            float spin = t * 1.4f / (k + 1);
+            for (int j = 0; j < shells[k]; j++)
+            {
+                float a = spin + j * Mathf.PI * 2f / shells[k];
+                var p = c + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * rad;
+                GUI.DrawTexture(new Rect(p.x - 4f, p.y - 4f, 8f, 8f), DotTex);
+            }
+        }
+        GUI.color = Color.white;
+        GUI.Label(new Rect(c.x - 60f, c.y + nucR + 2f, 120f, 18f), Lang.T("ядро", "nucleus"), sNote);
+
+        string foot = total > shown
+            ? Lang.T("В ядре показано " + shown + " частиц из " + total + ", доля протонов сохранена. ", "The nucleus shows " + shown + " of " + total + " particles, proton share kept. ")
+            : "";
+        foot += Lab.Mode >= Lab.Level.Uni
+            ? Lang.T("Модель Бора. На деле электроны — облака (орбитали), а ядро в ~100 000 раз меньше атома.", "Bohr model. Really electrons are clouds (orbitals), and the nucleus is ~100,000 times smaller than the atom.")
+            : Lang.T("Так атом рисуют в школе. На самом деле ядро в 100 000 раз меньше атома — здесь оно увеличено.", "The school picture of an atom. The real nucleus is 100,000 times smaller — enlarged here.");
+        GUI.Label(new Rect(r.x + 14f, r.yMax - 44f, w - 28f, 40f), foot, sSmall);
     }
 
 
