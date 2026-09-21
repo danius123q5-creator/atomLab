@@ -18,11 +18,16 @@ public class Bond : MonoBehaviour
     public Atom Other(Atom a) { return a == A ? B : A; }
     public float RestLength { get { return (A.El.Radius + B.El.Radius) * 1.45f; } }
 
-    public static Bond Create(Atom a, Atom b)
+    public static Bond Create(Atom a, Atom b) { return Create(a, b, 1); }
+
+    /// <summary>Связь сразу нужной кратности. Пресеты кладут связи так: у серной кислоты
+    /// сера держит шесть, а её игровая валентность — два.</summary>
+    public static Bond Create(Atom a, Atom b, int order)
     {
         var go = new GameObject("Bond_" + a.El.Sym + "-" + b.El.Sym);
         var bo = go.AddComponent<Bond>();
         bo.A = a; bo.B = b;
+        bo.Order = Mathf.Clamp(order, 1, 3);
         bo.Ionic = (a.El.EN > 0f && b.El.EN > 0f) && Mathf.Abs(a.El.EN - b.El.EN) >= 1.7f;
         a.Bonds.Add(bo); b.Bonds.Add(bo);
         All.Add(bo);

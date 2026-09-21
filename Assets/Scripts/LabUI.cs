@@ -103,7 +103,7 @@ public class LabUI : MonoBehaviour
         Styles();
         var e = Event.current;
         float cw = CellW, ch = cw * 1.12f;
-        tableTop = 150f;
+        tableTop = 178f;
         scrollMax = Mathf.Max(0f, (10f * ch + 40f) - (Screen.height - tableTop - 8f));
 
         HandleInput(e);
@@ -208,7 +208,31 @@ public class LabUI : MonoBehaviour
         }
         GUI.color = Color.white;
 
-        DrawTable(cw, ch);
+        if (GUI.Button(new Rect(panelX + 14f, 106f, W - 28f, 26f),
+            showPresets ? "← назад к таблице" : "Готовые вещества (15 штук, со строением)", sTab))
+            showPresets = !showPresets;
+
+        if (showPresets) DrawPresets(); else DrawTable(cw, ch);
+    }
+
+    bool showPresets;
+
+    /// <summary>Список готовых веществ. Каждое собирается со своим строением — углами и
+    /// кратностями связей, а не просто нужным набором атомов.</summary>
+    void DrawPresets()
+    {
+        float y = tableTop - 8f;
+        GUI.Label(new Rect(panelX + 14f, y, W - 28f, 20f),
+            "Нажми — и вещество появится в зоне собранным.", sSmall);
+        y += 24f;
+        for (int i = 0; i < Presets.All.Length; i++)
+        {
+            var p = Presets.All[i];
+            if (GUI.Button(new Rect(panelX + 14f, y, W - 28f, 26f), p.Name + "   ·   " + p.Formula, sTab))
+                Presets.Spawn(p);
+            y += 29f;
+        }
+        scrollMax = 0f;
     }
 
 
@@ -243,14 +267,14 @@ public class LabUI : MonoBehaviour
         var h = hover ?? carrying;
         if (h != null)
         {
-            GUI.Label(new Rect(panelX + 14f, 104f, W - 28f, 44f),
+            GUI.Label(new Rect(panelX + 14f, 136f, W - 28f, 44f),
                 h.Z + ". " + h.Name + " (" + h.Sym + ")   масса " + h.Mass.ToString("0.###") +
                 "   связей: " + h.Valence + (h.EN > 0f ? "   ЭО " + h.EN.ToString("0.00") : "") +
                 "\n" + h.ClassName + "  ·  " + h.PaintName, sSmall);
         }
         else
         {
-            DrawLegend(new Rect(panelX + 14f, 104f, W - 28f, 44f));
+            DrawLegend(new Rect(panelX + 14f, 136f, W - 28f, 44f));
         }
 
         foreach (var el in Elements.All)

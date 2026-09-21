@@ -76,7 +76,29 @@ public class SelfTest : MonoBehaviour
                   " touchAt=" + ((lr.El.Radius + cu.El.Radius) * 1.25f).ToString("0.00") +
                   " freeLr=" + lr.FreeValence + " freeCu=" + cu.FreeValence);
 
+        // Четвёртый случай: пресеты. Собираем КАЖДЫЙ и сверяем формулу, которую посчитал сам
+        // движок, с той, что заявлена в списке. Глазами это не проверить: бензол от толуола
+        // на картинке отличит не каждый, а формула отличит всегда.
+        int bad = 0;
+        foreach (var pr in Presets.All)
+        {
+            lab.ClearZone();
+            yield return new WaitForSeconds(0.15f);
+            Presets.Spawn(pr);
+            yield return new WaitForSeconds(0.25f);
+            lab.Recompute();
+            string mine = "";
+            int biggest = 0;
+            foreach (var m in lab.Mols) if (m.Atoms.Count > biggest) { biggest = m.Atoms.Count; mine = m.Formula; }
+            bool ok = (mine == pr.Formula) && lab.Mols.Count == 1;
+            if (!ok) bad++;
+            Debug.Log("SELFTEST preset " + pr.Name + ": want=" + pr.Formula + " got=" + mine +
+                      " parts=" + lab.Mols.Count + (ok ? " OK" : " MISMATCH"));
+        }
+        lab.ClearZone();
+        Debug.Log("SELFTEST presets bad=" + bad + " of " + Presets.All.Length);
+
         Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone);
-        if (!DemoOnly) Application.Quit((water && neonAlone) ? 0 : 2);
+        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0) ? 0 : 2);
     }
 }

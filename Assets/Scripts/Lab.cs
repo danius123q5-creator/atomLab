@@ -311,8 +311,9 @@ public class Lab : MonoBehaviour
                 sum += a.transform.position;
                 free += a.FreeValence;
             }
-            m.Formula = Molecules.Formula(counts);
-            m.Info = Molecules.Lookup(m.Formula);
+            m.Info = Molecules.LookupByComposition(counts);
+            // Узнанное показываем так, как пишут люди (NaCl, H2SO4), а неузнанное — по Гиллу.
+            m.Formula = m.Info != null ? m.Info.Formula : Molecules.Formula(counts);
             m.Center = sum / m.Atoms.Count;
             m.FreeLeft = free;
             Mols.Add(m);

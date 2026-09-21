@@ -116,6 +116,7 @@ public static class Molecules
     };
 
     static Dictionary<string, Info> _db;
+    static Dictionary<string, Info> _byComp;
 
     public static Dictionary<string, Info> DB
     {
@@ -139,6 +140,63 @@ public static class Molecules
     public static Info Lookup(string formula)
     {
         Info i; return DB.TryGetValue(formula, out i) ? i : null;
+    }
+
+    /// <summary>🔴 21.09. Поиск ПО СОСТАВУ, а не по написанию.
+    ///
+    /// Собранное вещество игра записывала по системе Гилла: ClNa, H3N, H2O4S. А в справочнике
+    /// они записаны так, как пишут люди: NaCl, NH3, H2SO4. Строки не совпадали — и аммиак,
+    /// соль, серная кислота и вся неорганика НЕ ОТКРЫВАЛИСЬ ВООБЩЕ, а задание «собери серную
+    /// кислоту» нельзя было выполнить в принципе. Поймала это не игра и не глаз, а проверка
+    /// пресетов: она сверяет посчитанную формулу с заявленной.
+    ///
+    /// Теперь ключ — состав: элементы по алфавиту с количествами. Как записана формула в
+    /// справочнике, больше не важно.</summary>
+    public static Info LookupByComposition(Dictionary<string, int> counts)
+    {
+        if (_byComp == null)
+        {
+            _byComp = new Dictionary<string, Info>(DB.Count);
+            foreach (var kv in DB)
+            {
+                string key = Canon(ParseFormula(kv.Key));
+                if (!_byComp.ContainsKey(key)) _byComp[key] = kv.Value;
+            }
+        }
+        Info i;
+        return _byComp.TryGetValue(Canon(counts), out i) ? i : null;
+    }
+
+    /// <summary>Ключ состава: "Cl1Na1". Порядок фиксирован алфавитом, поэтому запись
+    /// «NaCl» и запись «ClNa» дают один и тот же ключ.</summary>
+    public static string Canon(Dictionary<string, int> counts)
+    {
+        var keys = new List<string>(counts.Keys);
+        keys.Sort(System.StringComparer.Ordinal);
+        var sb = new StringBuilder();
+        foreach (var k in keys) { sb.Append(k); sb.Append(counts[k]); }
+        return sb.ToString();
+    }
+
+    /// <summary>Разбор формулы вида "C12H22O11", "NaHCO3", "Fe3O4" на состав. Скобок в
+    /// справочнике нет нарочно — разбирать "Ca(OH)2" этот код не умеет и не притворяется.</summary>
+    public static Dictionary<string, int> ParseFormula(string f)
+    {
+        var res = new Dictionary<string, int>();
+        int i = 0;
+        while (i < f.Length)
+        {
+            if (!char.IsUpper(f[i])) { i++; continue; }
+            int start = i++;
+            while (i < f.Length && char.IsLower(f[i])) i++;
+            string sym = f.Substring(start, i - start);
+            int numStart = i;
+            while (i < f.Length && char.IsDigit(f[i])) i++;
+            int n = (i > numStart) ? int.Parse(f.Substring(numStart, i - numStart)) : 1;
+            int prev; res.TryGetValue(sym, out prev);
+            res[sym] = prev + n;
+        }
+        return res;
     }
 
     /// <summary>Формула по составу, система Гилла: C, затем H, остальные по алфавиту.</summary>
