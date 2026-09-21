@@ -136,6 +136,60 @@ public class SelfTest : MonoBehaviour
         lab.ClearZone();
         Debug.Log("SELFTEST presets bad=" + bad + " of " + Presets.All.Length);
 
+        // 21.09: двадцать популярных соединений из-под таблицы. Сверяем то же, что у пресетов:
+        // формулу, посчитанную движком, с заявленной, и что вышла ОДНА молекула, а не куча.
+        // Плюс — что карточка вещество узнаёт (иначе строки «применение» у него не будет).
+        int popBad = 0;
+        foreach (var q in Presets.Grid)
+        {
+            lab.ClearZone();
+            yield return new WaitForSeconds(0.15f);
+            Presets.SpawnPopular(q);
+            yield return new WaitForSeconds(0.3f);
+            lab.Recompute();
+            string mine = ""; int biggest = 0; Lab.Mol big = null;
+            foreach (var m in lab.Mols) if (m.Atoms.Count > biggest) { biggest = m.Atoms.Count; mine = m.Formula; big = m; }
+            var info = Molecules.LookupByComposition(Molecules.ParseFormula(q.Formula));
+            bool known = big != null && big.Info != null && !string.IsNullOrEmpty(big.Info.Use);
+            bool ok = Molecules.Canon(Molecules.ParseFormula(mine)) == Molecules.Canon(Molecules.ParseFormula(q.Formula))
+                      && lab.Mols.Count == 1 && info != null && known;
+            if (!ok) popBad++;
+            Debug.Log("SELFTEST popular " + q.Formula + ": got=" + mine + " parts=" + lab.Mols.Count +
+                      " card=" + (known ? "да" : "НЕТ") + (ok ? " OK" : " MISMATCH"));
+        }
+        lab.ClearZone();
+        Debug.Log("SELFTEST popular bad=" + popBad + " of " + Presets.Grid.Length);
+
+        // 21.09: предел связей. Сера с КИСЛОРОДОМ обязана взять больше двух связей (SO3,
+        // H2SO4 руками), а сера с ВОДОРОДОМ — не больше двух (H2S, а не H3S). Кладём атомы
+        // вплотную, как это сделала бы рука, и считаем, сколько связей сера взяла сама.
+        lab.ClearZone();
+        yield return new WaitForSeconds(0.15f);
+        var sO = Atom.Spawn(Elements.BySymbol("S"), c);
+        float rr = Elements.BySymbol("S").Radius + Elements.BySymbol("O").Radius;
+        for (int i = 0; i < 3; i++)
+        {
+            float ang = i * 120f * Mathf.Deg2Rad;
+            Atom.Spawn(Elements.BySymbol("O"), c + new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * rr * 1.3f);
+        }
+        yield return new WaitForSeconds(0.8f);
+        int sWithO = sO.Bonds.Count;
+        lab.ClearZone();
+        yield return new WaitForSeconds(0.15f);
+        var sH = Atom.Spawn(Elements.BySymbol("S"), c);
+        float rh = Elements.BySymbol("S").Radius + Elements.BySymbol("H").Radius;
+        for (int i = 0; i < 3; i++)
+        {
+            float ang = i * 120f * Mathf.Deg2Rad;
+            Atom.Spawn(Elements.BySymbol("H"), c + new Vector3(Mathf.Cos(ang), Mathf.Sin(ang), 0f) * rh * 1.3f);
+        }
+        yield return new WaitForSeconds(0.8f);
+        int sWithH = sH.Bonds.Count;
+        lab.ClearZone();
+        bool hyperOk = sWithO >= 3 && sWithH <= 2;
+        Debug.Log("SELFTEST hyper S+3O: связей " + sWithO + " (нужно >=3) | S+3H: связей " + sWithH +
+                  " (нужно <=2) " + (hyperOk ? "OK" : "MISMATCH"));
+
         // Пятый случай: «посмотреть реакцию». Кладём в зону сырьё на этанол плюс лишнего —
         // и смотрим, ЧТО движок из этого собрал и не завис ли он.
         lab.ClearZone();

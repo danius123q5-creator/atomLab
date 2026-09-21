@@ -51,7 +51,7 @@ public class Traits : MonoBehaviour
                         string was = a.El.Name;
                         a.Become(next);
                         if (Lab.I != null)
-                            Lab.I.Say(was + " распался: минус два протона — теперь это " + next.Name + ".",
+                            Lab.I.Say(was + Lang.T(" распался: минус два протона — теперь это ", " decayed: minus two protons — now it is ") + next.Name + ".",
                                 new Color(0.6f, 1f, 0.7f));
                     }
                 }

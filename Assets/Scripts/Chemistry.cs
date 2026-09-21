@@ -21,7 +21,13 @@ public static class Chemistry
     /// место. У готовых веществ из списка пресетов строение настоящее — это разные вещи.</summary>
     public static void Assemble(List<Atom> atoms, Vector3 center)
     {
-        atoms.Sort((x, y) => y.El.Valence.CompareTo(x.El.Valence));
+        // Центр — по ОБЫЧНОЙ валентности (в CaCl2, CCl4, ZnCl2 это кальций, углерод, цинк).
+        // 21.09: сортировка по высшему пределу ставила в центр хлор (предел 7) и ломала хлориды —
+        // проверка всего справочника поймала CaCl2, CCl4, CHCl3, NH4Cl и реакцию цинка.
+        // Высший предел решает только НИЧЬЮ (сера против кислорода в SO3 — обе двухвалентны)
+        // и благородный газ, у которого обычной валентности нет (ксенон в XeF4).
+        System.Func<Atom, int> key = t => t.El.Valence > 0 ? t.El.Valence : t.El.MaxBonds;
+        atoms.Sort((x, y) => { int c = key(y).CompareTo(key(x)); return c != 0 ? c : y.El.MaxBonds.CompareTo(x.El.MaxBonds); });
         var core = atoms[0];
         core.transform.position = center;
         core.Body.linearVelocity = Vector3.zero;
@@ -38,10 +44,10 @@ public static class Chemistry
             a.Body.linearVelocity = Vector3.zero;
 
             Atom host = core;
-            if (host.FreeValence < 1)
+            if (host.FreeBondsWith(a) < 1)   // 21.09: предел с учётом соседа — S с O до шести
             {
                 host = null;
-                for (int j = 0; j < i; j++) if (atoms[j].FreeValence > 0) { host = atoms[j]; break; }
+                for (int j = 0; j < i; j++) if (atoms[j].FreeBondsWith(a) > 0 && a.FreeBondsWith(atoms[j]) > 0) { host = atoms[j]; break; }
             }
             if (host != null) Bond.Create(host, a);
         }
@@ -63,7 +69,7 @@ public static class Chemistry
         if (lab == null) return;
         if (Atom.All.Count < 2)
         {
-            lab.Say("Реагировать нечему: в зоне меньше двух атомов.", new Color(1f, 0.9f, 0.6f));
+            lab.Say(Lang.T("Реагировать нечему: в зоне меньше двух атомов.", "Nothing to react: fewer than two atoms in the zone."), new Color(1f, 0.9f, 0.6f));
             return;
         }
 
@@ -88,7 +94,7 @@ public static class Chemistry
         {
             var sb = new System.Text.StringBuilder();
             for (int i = 0; i < chain.Count; i++) sb.Append(i + 1).Append(") ").Append(chain[i]).Append("   ");
-            if (ReactionEngine.Refusals.Count > 0) sb.Append("Не пошло: ").Append(ReactionEngine.Refusals[0]);
+            if (ReactionEngine.Refusals.Count > 0) sb.Append(Lang.T("Не пошло: ", "Did not happen: ")).Append(ReactionEngine.Refusals[0]);
             lab.Say(sb.ToString(), new Color(0.75f, 1f, 0.8f));
             lab.Recompute();
             return;
@@ -97,7 +103,7 @@ public static class Chemistry
         if (ReactionEngine.Refusals.Count > 0)
         {
             // Правила сработали — но отказом. Это ответ, а не пустота.
-            var sb = new System.Text.StringBuilder("Реакции не будет. ");
+            var sb = new System.Text.StringBuilder(Lang.T("Реакции не будет. ", "No reaction. "));
             for (int i = 0; i < ReactionEngine.Refusals.Count && i < 2; i++) sb.Append(ReactionEngine.Refusals[i]).Append(' ');
             lab.Say(sb.ToString(), new Color(1f, 0.85f, 0.6f));
             Fx.Pop(0.7f);
@@ -216,17 +222,17 @@ public static class Chemistry
             if (m.Atoms.Count > 1 && m.Info == null) unknown.Add(m.Formula);
 
         if (made.Count > 0 && unknown.Count > 0)
-            lab.Say("Реакция: " + string.Join(", ", made.ToArray()) +
-                    ".  Из остатка слиплось: " + string.Join(", ", unknown.ToArray()) +
-                    " — таких веществ в справочнике нет.", new Color(0.7f, 1f, 0.75f));
+            lab.Say(Lang.T("Реакция: ", "Reaction: ") + string.Join(", ", made.ToArray()) +
+                    Lang.T(".  Из остатка слиплось: ", ".  The leftovers stuck together into: ") + string.Join(", ", unknown.ToArray()) +
+                    Lang.T(" — таких веществ в справочнике нет.", " — not in the reference book."), new Color(0.7f, 1f, 0.75f));
         else if (made.Count > 0)
-            lab.Say("Реакция: получилось " + string.Join(", ", made.ToArray()) +
-                    (left > 0 ? ".  Осталось свободных атомов: " + left : "."), new Color(0.7f, 1f, 0.75f));
+            lab.Say(Lang.T("Реакция: получилось ", "Reaction produced ") + string.Join(", ", made.ToArray()) +
+                    (left > 0 ? Lang.T(".  Осталось свободных атомов: ", ".  Free atoms left: ") + left : "."), new Color(0.7f, 1f, 0.75f));
         else if (unknown.Count > 0)
-            lab.Say("Знакомого вещества из этого набора не выходит — слепилось то, что позволила валентность: " +
+            lab.Say(Lang.T("Знакомого вещества из этого набора не выходит — слепилось то, что позволила валентность: ", "No known substance comes out of this set — valence allowed only this: ") +
                     string.Join(", ", unknown.ToArray()) + ".", new Color(0.9f, 0.95f, 1f));
         else
-            lab.Say("Связываться нечему: тут " + (Atom.All.Count == 1 ? "один атом" : "только одиночки — благородные газы") +
-                    ". Добавь в зону что-нибудь с валентностью.", new Color(1f, 0.85f, 0.6f));
+            lab.Say(Lang.T("Связываться нечему: тут ", "Nothing can bond: there is ") + (Atom.All.Count == 1 ? Lang.T("один атом", "a single atom") : Lang.T("только одиночки — благородные газы", "only loners — noble gases")) +
+                    Lang.T(". Добавь в зону что-нибудь с валентностью.", ". Add something with valence to the zone."), new Color(1f, 0.85f, 0.6f));
     }
 }

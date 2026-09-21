@@ -26,9 +26,19 @@ public static class BuildScript
         return new[] { ScenePath };
     }
 
+    /// <summary>21.09, владелец: «убери это» (заставка «Made with Unity» при запуске).
+    /// С Unity 6 заставку можно выключать и на бесплатной лицензии. Выключаем целиком: и
+    /// логотип, и сам экран заставки — игра открывается сразу.</summary>
+    static void NoSplash()
+    {
+        PlayerSettings.SplashScreen.show = false;
+        PlayerSettings.SplashScreen.showUnityLogo = false;
+    }
+
     public static void BuildWindows()
     {
         var scenes = EnsureScene();
+        NoSplash();
         PlayerSettings.productName = "AtomLab";
         PlayerSettings.companyName = "Danich";
         PlayerSettings.defaultScreenWidth = 1600;
@@ -51,6 +61,37 @@ public static class BuildScript
     }
 
 
+    /// <summary>Сборка под Linux (21.09, владелец: «создай билд для линукс»):
+    /// Unity.exe -batchmode -quit -projectPath "..." -executeMethod BuildScript.BuildLinux
+    /// Нужен модуль «Linux Build Support (Mono)» — поставлен через Unity Hub 21.09.
+    /// На выходе папка с исполняемым AtomLab.x86_64: на Linux ему надо дать право запуска
+    /// (chmod +x AtomLab.x86_64) — архив zip это право не всегда сохраняет.</summary>
+    public static void BuildLinux()
+    {
+        var scenes = EnsureScene();
+        NoSplash();
+        PlayerSettings.productName = "AtomLab";
+        PlayerSettings.companyName = "Danich";
+        PlayerSettings.defaultScreenWidth = 1600;
+        PlayerSettings.defaultScreenHeight = 900;
+        PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+        PlayerSettings.resizableWindow = true;
+
+        var opts = new BuildPlayerOptions
+        {
+            scenes = scenes,
+            locationPathName = "Build/Linux/AtomLab.x86_64",
+            target = BuildTarget.StandaloneLinux64,
+            options = BuildOptions.None,
+        };
+
+        var report = BuildPipeline.BuildPlayer(opts);
+        var s = report.summary;
+        Debug.Log("LINUX BUILD RESULT: " + s.result + "  size=" + s.totalSize + " bytes  errors=" + s.totalErrors);
+        if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) EditorApplication.Exit(1);
+    }
+
+
     /// <summary>Сборка под Android:
     /// Unity.exe -batchmode -quit -projectPath "..." -executeMethod BuildScript.BuildAndroid
     ///
@@ -60,6 +101,7 @@ public static class BuildScript
     public static void BuildAndroid()
     {
         var scenes = EnsureScene();
+        NoSplash();
         PlayerSettings.productName = "AtomLab";
         PlayerSettings.companyName = "Danich";
         PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.Android, "com.danich.atomlab");
@@ -95,6 +137,7 @@ public static class BuildScript
     public static void BuildWebGL()
     {
         var scenes = EnsureScene();
+        NoSplash();
         PlayerSettings.productName = "AtomLab";
         PlayerSettings.companyName = "Danich";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
@@ -129,6 +172,7 @@ public static class BuildScript
     public static void BuildIOS()
     {
         var scenes = EnsureScene();
+        NoSplash();
         PlayerSettings.productName = "AtomLab";
         PlayerSettings.companyName = "Danich";
         PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.iOS, "com.danich.atomlab");

@@ -22,8 +22,38 @@ public class Atom : MonoBehaviour
             if (Lab.GodMode) return 99;
             int used = 0;
             for (int i = 0; i < Bonds.Count; i++) used += Bonds[i].Order;
-            return Mathf.Max(0, El.Valence - used);
+            return Mathf.Max(0, El.Valence - used);   // точки над атомом и общий сборщик — по обычной
         }
+    }
+
+    /// <summary>Предел связей с КОНКРЕТНЫМ соседом.
+    ///
+    /// 21.09. Первая редакция давала высшую валентность всем и всегда — и проверка тут же
+    /// поймала поломку: хлор с пределом 7 стал липким, хлор из HCl хватал медь, и медь
+    /// «растворялась» в соляной кислоте вопреки ряду активности.
+    ///
+    /// Так и в жизни не бывает. Высшая валентность у серы, фосфора, хлора, азота, марганца,
+    /// ксенона раскрывается только с соседом ЭЛЕКТРООТРИЦАТЕЛЬНЕЕ их самих — с кислородом,
+    /// фтором, хлором: H2SO4, SO3, PCl5, HClO4, KMnO4, XeF4. С водородом или металлом сера
+    /// двухвалентна (H2S), хлор одновалентен (HCl, NaCl). Это правило и стоит здесь.</summary>
+    public int CapWith(Atom partner)
+    {
+        bool high = partner != null && partner.El.EN > 0f && El.EN > 0f && partner.El.EN > El.EN;
+        return high ? El.MaxBonds : El.Valence;
+    }
+
+    /// <summary>Сколько связей занято сейчас (с учётом кратности).</summary>
+    public int UsedBonds
+    {
+        get { int used = 0; for (int i = 0; i < Bonds.Count; i++) used += Bonds[i].Order; return used; }
+    }
+
+    public int FreeBondsWith(Atom partner)
+    {
+        if (Lab.GodMode) return 99;
+        int used = 0;
+        for (int i = 0; i < Bonds.Count; i++) used += Bonds[i].Order;
+        return Mathf.Max(0, CapWith(partner) - used);
     }
 
     public bool BondedTo(Atom other)
@@ -77,7 +107,7 @@ public class Atom : MonoBehaviour
         {
             int used = 0;
             for (int i = 0; i < Bonds.Count; i++) used += Bonds[i].Order;
-            if (used <= el.Valence) break;
+            if (used <= el.MaxBonds) break;
             int worst = 0; float far = -1f;
             for (int i = 0; i < Bonds.Count; i++)
             {

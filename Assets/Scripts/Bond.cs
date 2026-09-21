@@ -46,7 +46,7 @@ public class Bond : MonoBehaviour
     public bool Raise()
     {
         if (Order >= 3) return false;
-        if (A.FreeValence < 1 || B.FreeValence < 1) return false;
+        if (A.FreeBondsWith(B) < 1 || B.FreeBondsWith(A) < 1) return false;   // S=O в H2SO4 — можно, Cl=H — нет
         Order++;
         Rebuild();
         Vector3 m = (A.transform.position + B.transform.position) * 0.5f;

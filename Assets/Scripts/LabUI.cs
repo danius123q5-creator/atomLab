@@ -40,17 +40,52 @@ public class LabUI : MonoBehaviour
         {
             if (carrying != null || drag == DragKind.Panel) return true;
             if (menuAtom != null &&
-                MenuRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y))) return true;
+                MenuRect.Contains(MouseGui)) return true;
             if ((replaceTarget != null || pendingSlot >= 0) &&
-                Input.mousePosition.x <= PanelRightPx + 262f) return true;    // подменю справа от таблицы
-            float mx = Input.mousePosition.x;
+                MouseGui.x <= PanelRightGui + 262f) return true;    // подменю справа от таблицы
+            float mx = MouseGui.x;
             return mx <= panelX + W + HandleW;
         }
     }
 
     /// <summary>Правый край видимой части панели в пикселях — по нему камера решает,
     /// насколько сдвинуть зону вправо.</summary>
-    public float PanelRightPx { get { return Mathf.Max(0f, panelX + W); } }
+    public float PanelRightPx { get { return PanelRightGui * U; } }
+
+    /// <summary>То же в единицах интерфейса — для раскладки внутри OnGUI.</summary>
+    float PanelRightGui { get { return Mathf.Max(0f, panelX + W); } }
+
+    // ==================== масштаб для телефона ====================
+    //
+    // 🔴 21.09, владелец: «управление для телефона: кнопки крупнее». Интерфейс нарисован в
+    // пикселях под монитор: на телефоне с плотным экраном клетка таблицы выходила около двух
+    // миллиметров — пальцем не попасть. Лечим одним множителем U на ВЕСЬ интерфейс: рисуем в
+    // «единицах интерфейса», а GUI.matrix растягивает их на экран.
+    //
+    // Ловушка, из-за которой это нельзя сделать одной строкой: раскладка местами читает мышь
+    // через Input.mousePosition (экранные пиксели), а местами через Event (уже в единицах
+    // интерфейса). При U != 1 это два разных пространства. Поэтому всё экранное здесь явно
+    // переводится: MouseGui, SW/SH, деление точек камеры на U. На ПК U = 1 — ни одна цифра
+    // не меняется, мышь работает как работала.
+    public static float U = 1f;
+    float SW { get { return Screen.width / U; } }
+    float SH { get { return Screen.height / U; } }
+    Vector2 MouseGui { get { return new Vector2(Input.mousePosition.x / U, SH - Input.mousePosition.y / U); } }
+
+    static float ComputeScale()
+    {
+        // Ручная установка — чтобы проверить телефонную раскладку на ПК: AtomLab.exe -uiscale 2.5
+        var args = System.Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+            if (args[i] == "-uiscale") { float f; if (float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out f)) return Mathf.Clamp(f, 1f, 4f); }
+        if (!Application.isMobilePlatform) return 1f;
+        float dpi = Screen.dpi > 1f ? Screen.dpi : 320f;       // некоторые телефоны dpi не отдают
+        float k = Mathf.Clamp(dpi / 160f, 1f, 3.5f);
+        // Не даём «виртуальному экрану» стать меньше 800 x 450 единиц: иначе пульты и карточка
+        // перестают влезать. Крупнее, чем помещается, — тоже плохо.
+        k = Mathf.Min(k, Mathf.Min(Screen.width / 800f, Screen.height / 450f));
+        return Mathf.Max(1f, k);
+    }
 
     void Awake() { I = this; }
 
@@ -58,7 +93,8 @@ public class LabUI : MonoBehaviour
 
     void Update()
     {
-        W = Mathf.Clamp(Screen.width * 0.42f, 360f, 620f);
+        U = ComputeScale();
+        W = Mathf.Clamp(SW * 0.42f, 360f, 620f);
         if (drag != DragKind.Panel)
             panelX = Mathf.Lerp(panelX, open ? 0f : -W, Time.unscaledDeltaTime * 12f);
     }
@@ -105,7 +141,7 @@ public class LabUI : MonoBehaviour
         return new Rect(panelX + 13f + col * cw, tableTop + row * ch - scroll, cw - 2f, ch - 2f);
     }
 
-    Rect TableViewRect { get { return new Rect(panelX, tableTop, W, Screen.height - tableTop - 8f); } }
+    Rect TableViewRect { get { return new Rect(panelX, tableTop, W, SH - tableTop - 8f); } }
 
     Elements.El HitTest(Vector2 p)
     {
@@ -118,6 +154,7 @@ public class LabUI : MonoBehaviour
 
     void OnGUI()
     {
+        GUI.matrix = Matrix4x4.Scale(new Vector3(U, U, 1f));
         Styles();
         var e = Event.current;
         float cw = CellW, ch = cw * 1.12f;
@@ -126,7 +163,10 @@ public class LabUI : MonoBehaviour
         int extraRows = 0;
         foreach (var el in Elements.All) if (el.Assembled) extraRows++;
         int rows = 15 + extraRows / 18;
-        scrollMax = Mathf.Max(0f, (rows * ch + 40f) - (Screen.height - tableTop - 8f));
+        scrollMax = Mathf.Max(0f, (rows * ch + 40f) - (SH - tableTop - 8f));
+        // Под таблицей теперь сетка популярных соединений — прокрутка обязана до неё доставать.
+        float popBottom = PopRect(Presets.Grid.Length - 1).yMax + scroll - tableTop + 24f;
+        scrollMax = Mathf.Max(scrollMax, popBottom - (SH - tableTop - 8f));
 
         HandleInput(e);
 
@@ -186,9 +226,17 @@ public class LabUI : MonoBehaviour
             {
                 if (e.mousePosition.x > panelX + W && Lab.I != null)
                 {
-                    Vector3 sp = new Vector3(e.mousePosition.x, Screen.height - e.mousePosition.y, 0f);
+                    Vector3 sp = new Vector3(e.mousePosition.x * U, Screen.height - e.mousePosition.y * U, 0f);   // GUI -> экран
                     Lab.I.SpawnFromTable(carrying, sp);
                 }
+            }
+            else if (drag == DragKind.Scroll && d.magnitude < 10f && candidate == null && !showPresets && Lab.I != null
+                     && PopHit(e.mousePosition) >= 0)
+            {
+                // Касание, а не протяжка: протяжкой листают, и пролистанная кнопка не должна
+                // срабатывать сама — поэтому сетка ловит нажатие здесь, как клетки таблицы,
+                // а не через GUI.Button.
+                Presets.SpawnPopular(Presets.Grid[PopHit(e.mousePosition)]);
             }
             else if (drag == DragKind.Scroll && d.magnitude < 10f && candidate != null && Lab.I != null)
             {
@@ -210,53 +258,67 @@ public class LabUI : MonoBehaviour
     {
         // Фон панели.
         GUI.color = new Color(0.06f, 0.08f, 0.12f, 0.94f);
-        GUI.DrawTexture(new Rect(panelX, 0f, W, Screen.height), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(panelX, 0f, W, SH), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
         // Язычок: тянуть отсюда.
-        var handle = new Rect(panelX + W, Screen.height * 0.5f - 70f, HandleW, 140f);
+        var handle = new Rect(panelX + W, SH * 0.5f - 70f, HandleW, 140f);
         GUI.color = new Color(0.12f, 0.16f, 0.24f, 0.95f);
         GUI.DrawTexture(handle, Texture2D.whiteTexture);
         GUI.color = Color.white;
         GUI.Label(new Rect(handle.x + 4f, handle.y + 46f, HandleW, 60f), open ? "<\n<\n<" : ">\n>\n>", sSmall);
 
-        GUI.Label(new Rect(panelX + 14f, 8f, W - 28f, 26f), "АТОМНАЯ ЛАБОРАТОРИЯ", sTitle);
+        GUI.Label(new Rect(panelX + 14f, 8f, W - 28f, 26f), Lang.T("АТОМНАЯ ЛАБОРАТОРИЯ", "ATOM LAB"), sTitle);
         GUI.Label(new Rect(panelX + 14f, 32f, W - 28f, 36f),
-            "Тяни элемент из таблицы вправо — в зону. Панель двигается свайпом, Esc — спрятать.", sSmall);
+            Lang.T("Тяни элемент из таблицы вправо — в зону. Панель двигается свайпом, Esc — спрятать.", "Drag an element right into the zone. Swipe the panel, Esc hides it."), sSmall);
 
         // 🔴 21.09, владелец: вместо вкладок «Открытия / Задания / Как играть» — один тумблер.
         // Журнал и задания никуда не делись, они считаются как раньше; счётчик открытий виден
         // в правом верхнем углу. Просто перестали занимать половину панели.
+        // 2D-режим — справа в той же строке, чтобы не сдвигать таблицу вниз.
+        float w2d = Mathf.Round((W - 28f) * 0.3f);
+        GUI.color = Lab.Mode2D ? new Color(0.55f, 1f, 0.75f) : Color.white;
+        if (GUI.Button(new Rect(panelX + W - 14f - w2d, 74f, w2d, 28f),
+            Lab.Mode2D ? Lang.T("2D: ВКЛ", "2D: ON") : Lang.T("2D: выкл", "2D: off"), sTab))
+        {
+            Lab.Mode2D = !Lab.Mode2D;
+            Lab.I.Say(Lab.Mode2D
+                ? Lang.T("2D-режим: вид спереди, все атомы в одной плоскости — как формула на бумаге.",
+                         "2D mode: front view, all atoms in one plane — like a formula on paper.")
+                : Lang.T("3D-режим: плоскость отпущена, молекулы расправляются в объём.",
+                         "3D mode: the plane is released, molecules spread back into 3D."),
+                new Color(0.7f, 1f, 0.8f));
+        }
         GUI.color = Lab.GodMode ? new Color(1f, 0.85f, 0.35f) : Color.white;
-        if (GUI.Button(new Rect(panelX + 14f, 74f, W - 28f, 28f),
-            (Lab.GodMode ? "РЕЖИМ БОГА: ВКЛ" : "Режим бога: выкл") + "  —  все атомы могут соединиться", sTab))
+        if (GUI.Button(new Rect(panelX + 14f, 74f, W - 28f - w2d - 6f, 28f),
+            (Lab.GodMode ? Lang.T("РЕЖИМ БОГА: ВКЛ", "GOD MODE: ON") : Lang.T("Режим бога: выкл", "God mode: off")) + Lang.T("  —  все атомы могут соединиться", "  —  every atom can bond"), sTab))
         {
             Lab.GodMode = !Lab.GodMode;
             Lab.I.Say(Lab.GodMode
-                ? "Режим бога: валентность больше не считается, склеивается всё со всем — даже гелий."
-                : "Обычный режим: работают валентность и правило благородных газов.",
+                ? Lang.T("Режим бога: валентность больше не считается, склеивается всё со всем — даже гелий.", "God mode: valence is ignored, everything sticks to everything — even helium.")
+                : Lang.T("Обычный режим: работают валентность и правило благородных газов.", "Normal mode: valence and the noble gas rule apply."),
                 Lab.GodMode ? new Color(1f, 0.85f, 0.4f) : new Color(0.8f, 0.9f, 1f));
         }
         GUI.color = Color.white;
 
         GUI.color = quarkOn ? new Color(0.85f, 0.6f, 1f) : Color.white;
         if (GUI.Button(new Rect(panelX + 14f, 202f, W - 28f, 26f),
-            quarkOn ? "← выйти из сборки кварков" : "Сборка из кварков (этаж ниже атома)", sTab))
+            quarkOn ? Lang.T("← выйти из сборки кварков", "← leave quark builder") : Lang.T("Сборка из кварков (этаж ниже атома)", "Quark builder (one level below the atom)"), sTab))
             ToggleQuarks();
 
         GUI.color = builderOn ? new Color(1f, 0.7f, 0.35f) : Color.white;
         if (GUI.Button(new Rect(panelX + 14f, 170f, W - 28f, 26f),
-            builderOn ? "← выйти из сборки атома" : "Сборка атома (протоны, нейтроны, электроны)", sTab))
+            builderOn ? Lang.T("← выйти из сборки атома", "← leave atom builder") : Lang.T("Сборка атома (протоны, нейтроны, электроны)", "Atom builder (protons, neutrons, electrons)"), sTab))
             ToggleBuilder();
 
         GUI.color = accelOn ? new Color(0.5f, 0.9f, 1f) : Color.white;
         if (GUI.Button(new Rect(panelX + 14f, 138f, W - 28f, 26f),
-            accelOn ? "← выйти из ускорителя" : "Ускоритель частиц (склеить ядра)", sTab))
+            accelOn ? Lang.T("← выйти из ускорителя", "← leave accelerator") : Lang.T("Ускоритель частиц (склеить ядра)", "Particle accelerator (fuse nuclei)"), sTab))
             ToggleAccelerator();
         GUI.color = Color.white;
 
         if (GUI.Button(new Rect(panelX + 14f, 106f, W - 28f, 26f),
-            showPresets ? "← назад к таблице" : "Готовые вещества (15 штук, со строением)", sTab))
+            showPresets ? Lang.T("← назад к таблице", "← back to the table") : Lang.T("Готовые вещества (15 штук, со строением)", "Ready substances (15, with structure)"), sTab))
             showPresets = !showPresets;
 
         if (showPresets) DrawPresets(); else DrawTable(cw, ch);
@@ -270,7 +332,7 @@ public class LabUI : MonoBehaviour
     {
         float y = tableTop - 8f;
         GUI.Label(new Rect(panelX + 14f, y, W - 28f, 20f),
-            "Нажми — и вещество появится в зоне собранным.", sSmall);
+            Lang.T("Нажми — и вещество появится в зоне собранным.", "Tap one and it appears in the zone fully built."), sSmall);
         y += 24f;
         for (int i = 0; i < Presets.All.Length; i++)
         {
@@ -288,7 +350,7 @@ public class LabUI : MonoBehaviour
     /// об этом прямо говорит, иначе несовпадение выглядело бы как ошибка.</summary>
     void DrawLegend(Rect r)
     {
-        string[] names = { "металлы", "неметаллы", "радиация", "неизученные", "ускоритель", "собранные" };
+        string[] names = { Lang.T("металлы", "metals"), Lang.T("неметаллы", "nonmetals"), Lang.T("радиация", "radioactive"), Lang.T("неизученные", "unexplored"), Lang.T("ускоритель", "accelerator"), Lang.T("собранные", "assembled") };
         Color[] cols =
         {
             new Color(0.82f, 0.20f, 0.22f), new Color(0.20f, 0.45f, 0.88f),
@@ -306,7 +368,7 @@ public class LabUI : MonoBehaviour
             x += 19f + sz.x;
         }
         GUI.Label(new Rect(r.x, r.y + 19f, r.width, 30f),
-            "Цвет клетки — класс элемента, цвет шарика в зоне — его собственный (палитра CPK).", sSmall);
+            Lang.T("Цвет клетки — класс элемента, цвет шарика в зоне — его собственный (палитра CPK).", "Cell colour is the element class; the ball in the zone has its own colour (CPK palette)."), sSmall);
     }
 
     void DrawTable(float cw, float ch)
@@ -316,8 +378,8 @@ public class LabUI : MonoBehaviour
         if (h != null)
         {
             GUI.Label(new Rect(panelX + 14f, 232f, W - 28f, 44f),
-                h.Z + ". " + h.Name + " (" + h.Sym + ")   масса " + h.Mass.ToString("0.###") +
-                "   связей: " + h.Valence + (h.EN > 0f ? "   ЭО " + h.EN.ToString("0.00") : "") +
+                h.Z + ". " + h.Name + " (" + h.Sym + Lang.T(")   масса ", ")   mass ") + h.Mass.ToString("0.###") +
+                Lang.T("   связей: ", "   bonds: ") + (h.MaxBonds > h.Valence ? h.Valence + Lang.T(", до ", ", up to ") + h.MaxBonds : h.Valence.ToString()) + (h.EN > 0f ? Lang.T("   ЭО ", "   EN ") + h.EN.ToString("0.00") : "") +
                 "\n" + h.ClassName + "  ·  " + h.PaintName, sSmall);
         }
         else
@@ -328,7 +390,7 @@ public class LabUI : MonoBehaviour
         foreach (var el in Elements.All)
         {
             Rect r = CellRect(el);
-            if (r.yMax < tableTop - 4f || r.y > Screen.height) continue;    // вне видимой части — не рисуем
+            if (r.yMax < tableTop - 4f || r.y > SH) continue;    // вне видимой части — не рисуем
             Color c = el.PaintColor;
             bool isHover = (h == el);
             GUI.color = isHover ? Color.Lerp(c, Color.white, 0.45f) : c;
@@ -355,10 +417,12 @@ public class LabUI : MonoBehaviour
             else GUI.Label(r, el.Sym, sCell);
         }
 
+        DrawPopular();
+
         // Полоса прокрутки — тонкая, справа.
         if (scrollMax > 1f)
         {
-            float viewH = Screen.height - tableTop - 8f;
+            float viewH = SH - tableTop - 8f;
             float frac = viewH / (viewH + scrollMax);
             float barH = viewH * frac;
             float barY = tableTop + (viewH - barH) * (scroll / scrollMax);
@@ -371,6 +435,67 @@ public class LabUI : MonoBehaviour
 
 
 
+    // ==================== 20 популярных соединений под таблицей ====================
+
+    /// <summary>Верх сетки: сразу под самой нижней занятой клеткой таблицы. Считаем по самим
+    /// клеткам, а не по номеру ряда: снизу прирастают голубые и оранжевые ряды, и сетка
+    /// обязана уезжать вниз вместе с ними, а не налезать на них.</summary>
+    float PopTop()
+    {
+        float bottom = tableTop - scroll;
+        foreach (var el in Elements.All) bottom = Mathf.Max(bottom, CellRect(el).yMax);
+        return bottom + 34f;
+    }
+
+    Rect PopRect(int i)
+    {
+        const int cols = 4; const float gap = 4f, bh = 44f;
+        float bw = (W - 26f - gap * (cols - 1)) / cols;
+        int nPop = Presets.Popular.Length;
+        float extra = i >= nPop ? 24f : 0f;       // место под подпись «весь справочник»
+        int row = i < nPop ? i / cols : (nPop + cols - 1) / cols + (i - nPop) / cols;
+        return new Rect(panelX + 13f + ((i < nPop ? i : i - nPop) % cols) * (bw + gap), PopTop() + row * (bh + gap) + extra, bw, bh);
+    }
+
+    int PopHit(Vector2 p)
+    {
+        if (!TableViewRect.Contains(p)) return -1;
+        for (int i = 0; i < Presets.Grid.Length; i++) if (PopRect(i).Contains(p)) return i;
+        return -1;
+    }
+
+    void DrawPopular()
+    {
+        float top = PopTop();
+        if (top - 24f < SH && top > tableTop - 40f)
+            GUI.Label(new Rect(panelX + 14f, top - 24f, W - 28f, 20f),
+                Lang.T("Популярные соединения — нажми, и появится в зоне", "Popular compounds — tap to drop into the zone"), sSmall);
+        Vector2 m = Event.current.mousePosition;
+        int nPop = Presets.Popular.Length;
+        for (int i = 0; i < Presets.Grid.Length; i++)
+        {
+            var q = Presets.Grid[i];
+            Rect r = PopRect(i);
+            // Над первой клеткой справочника — своя подпись, чтобы было видно, где кончились
+            // популярные и начался весь список.
+            if (i == nPop && r.y - 22f < SH && r.y > tableTop - 20f)
+                GUI.Label(new Rect(panelX + 14f, r.y - 22f, W - 28f, 20f),
+                    Lang.T("Весь справочник игры — ", "The whole reference book — ") + (Presets.Grid.Length - nPop) + Lang.T(" веществ", " substances"), sSmall);
+            if (r.yMax < tableTop - 4f || r.y > SH) continue;
+            bool over = r.Contains(m) && drag == DragKind.None;
+            GUI.color = over ? new Color(0.30f, 0.55f, 0.75f) : new Color(0.16f, 0.30f, 0.42f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            sCell.normal.textColor = Color.white;
+            GUI.Label(new Rect(r.x, r.y + 2f, r.width, r.height * 0.55f), q.Formula, sCell);
+            int keep = sSmall.fontSize;
+            var keepA = sSmall.alignment;
+            sSmall.fontSize = 11; sSmall.alignment = TextAnchor.MiddleCenter;
+            GUI.Label(new Rect(r.x, r.y + r.height * 0.48f, r.width, r.height * 0.5f), Lang.T(q.Ru, q.En), sSmall);
+            sSmall.fontSize = keep; sSmall.alignment = keepA;
+        }
+    }
+
     // ==================== мир: подписи над атомами и молекулами ====================
 
     void DrawWorldLabels()
@@ -380,9 +505,9 @@ public class LabUI : MonoBehaviour
 
         foreach (var a in Atom.All)
         {
-            Vector3 sp = cam.WorldToScreenPoint(a.transform.position);
+            Vector3 sp = cam.WorldToScreenPoint(a.transform.position); sp.x /= U; sp.y /= U;
             if (sp.z <= 0f) continue;
-            float y = Screen.height - sp.y;
+            float y = SH - sp.y;
             sWorld.normal.textColor = Color.white;
             GUI.Label(new Rect(sp.x - 30f, y - 10f, 60f, 20f), a.El.Sym, sWorld);
             if (a.FreeValence > 0)
@@ -394,16 +519,16 @@ public class LabUI : MonoBehaviour
             {
                 // Пусто под символом читалось как «всё в порядке». Теперь занятый атом виден.
                 sWorld.normal.textColor = new Color(1f, 0.55f, 0.4f, 0.95f);
-                GUI.Label(new Rect(sp.x - 30f, y + 6f, 60f, 16f), "занят", sWorld);
+                GUI.Label(new Rect(sp.x - 30f, y + 6f, 60f, 16f), Lang.T("занят", "full"), sWorld);
             }
         }
 
         foreach (var m in Lab.I.Mols)
         {
             if (m.Atoms.Count < 2) continue;
-            Vector3 sp = cam.WorldToScreenPoint(m.Center + Vector3.up * 0.9f);
+            Vector3 sp = cam.WorldToScreenPoint(m.Center + Vector3.up * 0.9f); sp.x /= U; sp.y /= U;
             if (sp.z <= 0f) continue;
-            float y = Screen.height - sp.y;
+            float y = SH - sp.y;
             string text = m.Formula;
             if (m.Info != null) text += "  —  " + m.Info.Name;
             sWorld.normal.textColor = m.Info != null ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 1f, 1f, 0.65f);
@@ -423,9 +548,9 @@ public class LabUI : MonoBehaviour
         foreach (var a in lab.Selected)
         {
             if (a == null) continue;
-            Vector3 sp = cam.WorldToScreenPoint(a.transform.position);
+            Vector3 sp = cam.WorldToScreenPoint(a.transform.position); sp.x /= U; sp.y /= U;
             if (sp.z <= 0f) continue;
-            float y = Screen.height - sp.y;
+            float y = SH - sp.y;
             float r = 26f;
             GUI.color = new Color(0.4f, 0.9f, 1f, 0.95f);
             // Четыре уголка, а не рамка целиком: так видно и атом, и то, что он выбран.
@@ -441,8 +566,8 @@ public class LabUI : MonoBehaviour
         if (lab.Banding)
         {
             var r = Rect.MinMaxRect(
-                Mathf.Min(lab.BandA.x, lab.BandB.x), Screen.height - Mathf.Max(lab.BandA.y, lab.BandB.y),
-                Mathf.Max(lab.BandA.x, lab.BandB.x), Screen.height - Mathf.Min(lab.BandA.y, lab.BandB.y));
+                Mathf.Min(lab.BandA.x, lab.BandB.x) / U, SH - Mathf.Max(lab.BandA.y, lab.BandB.y) / U,
+                Mathf.Max(lab.BandA.x, lab.BandB.x) / U, SH - Mathf.Min(lab.BandA.y, lab.BandB.y) / U);
             GUI.color = new Color(0.4f, 0.8f, 1f, 0.18f);
             GUI.DrawTexture(r, Texture2D.whiteTexture);
             GUI.color = new Color(0.5f, 0.9f, 1f, 0.9f);
@@ -457,17 +582,17 @@ public class LabUI : MonoBehaviour
     void DrawHud()
     {
         var lab = Lab.I;
-        var r = new Rect(Screen.width - 260f, 10f, 250f, 60f);
+        var r = new Rect(SW - 260f, 10f, 250f, 60f);
         GUI.color = new Color(0f, 0f, 0f, 0.45f);
         GUI.DrawTexture(r, Texture2D.whiteTexture);
         GUI.color = Color.white;
-        GUI.Label(new Rect(r.x + 10f, r.y + 6f, r.width - 20f, 22f), "Очки: " + lab.Score, sTitle);
+        GUI.Label(new Rect(r.x + 10f, r.y + 6f, r.width - 20f, 22f), Lang.T("Очки: ", "Score: ") + lab.Score, sTitle);
         GUI.Label(new Rect(r.x + 10f, r.y + 30f, r.width - 20f, 22f),
-            "Открыто веществ: " + lab.Discovered.Count + " / " + Molecules.Total + "   ·   атомов: " + Atom.All.Count, sSmall);
+            Lang.T("Открыто веществ: ", "Substances found: ") + lab.Discovered.Count + " / " + Molecules.Total + Lang.T("   ·   атомов: ", "   ·   atoms: ") + Atom.All.Count, sSmall);
 
         if (Time.time < lab.ToastUntil && !string.IsNullOrEmpty(lab.Toast))
         {
-            var tr = new Rect(panelX + W + 40f, Screen.height - 96f, Screen.width - (panelX + W) - 80f, 64f);
+            var tr = new Rect(panelX + W + 40f, SH - 96f, SW - (panelX + W) - 80f, 64f);
             GUI.color = new Color(0f, 0f, 0f, 0.55f);
             GUI.DrawTexture(tr, Texture2D.whiteTexture);
             GUI.color = Color.white;
@@ -495,12 +620,13 @@ public class LabUI : MonoBehaviour
             if (m.Atoms.Count > 1 && (best == null || m.Atoms.Count > best.Atoms.Count)) best = m;
         if (best == null) return;
 
-        float x = PanelRightPx + 20f;
-        float w = Mathf.Min(430f, Screen.width - x - 20f);
+        float x = PanelRightGui + 20f;
+        float w = Mathf.Min(430f, SW - x - 20f);
         if (w < 160f) return;
-        float h = best.Info != null ? 104f : 78f;
+        bool hasUse = best.Info != null && !string.IsNullOrEmpty(best.Info.Use);
+        float h = best.Info != null ? (hasUse ? 128f : 104f) : 78f;
         cardHeight = h;
-        var r = new Rect(x, Screen.height - h - 20f, w, h);
+        var r = new Rect(x, SH - h - 20f, w, h);
 
         GUI.color = new Color(0f, 0f, 0f, 0.6f);
         GUI.DrawTexture(r, Texture2D.whiteTexture);
@@ -513,14 +639,39 @@ public class LabUI : MonoBehaviour
 
         if (best.Info != null)
         {
-            GUI.Label(new Rect(r.x + 14f, r.y + 38f, r.width - 24f, 22f), best.Info.Name, sTitle);
-            GUI.Label(new Rect(r.x + 14f, r.y + 60f, r.width - 24f, 38f), best.Info.Note, sSmall);
+            GUI.Label(new Rect(r.x + 14f, r.y + 38f, r.width - 24f, 22f), Lang.Name(best.Info), sTitle);
+            GUI.Label(new Rect(r.x + 14f, r.y + 60f, r.width - 24f, 38f), Lang.Note(best.Info), sSmall);
+            if (hasUse)
+            {
+                // 🔴 21.09, владелец: «добавь сюда область применения». Отдельной строкой и
+                // другим цветом — это не рассказ о веществе, а ответ «где я его встречу».
+                var keep = sSmall.normal.textColor;
+                sSmall.normal.textColor = new Color(1f, 0.85f, 0.45f);
+                GUI.Label(new Rect(r.x + 14f, r.y + 100f, r.width - 24f, 24f),
+                          Lang.T("Применение: ", "Used for: ") + Lang.Use(best.Info), sSmall);
+                sSmall.normal.textColor = keep;
+            }
         }
         else
         {
+            // Нет в справочнике — это ещё не «не бывает». Пробуем назвать по правилам.
+            var counts = new Dictionary<string, int>();
+            foreach (var at in best.Atoms)
+            {
+                int c; counts.TryGetValue(at.El.Sym, out c);
+                counts[at.El.Sym] = c + 1;
+            }
+            var guess = Naming.Describe(counts);
+            string text;
+            if (guess != null && guess.Plausible)
+                text = (Lang.EN ? guess.En : guess.Ru) + "  —  " + guess.Why + ".";
+            else if (guess != null)
+                text = (Lang.EN ? guess.En : guess.Ru) + "?  " + guess.Why + ".";
+            else
+                text = Lang.T("В справочнике игры такого нет. Это не значит, что его нет в природе.",
+                              "Not in the game's reference book. That does not mean it does not exist.");
             GUI.Label(new Rect(r.x + 14f, r.y + 38f, r.width - 24f, 34f),
-                "Такого вещества в справочнике нет — слепить можно, а в природе такая связка не живёт.\nАтомов: " + best.Atoms.Count +
-                ", свободных связей: " + best.FreeLeft + ".", sSmall);
+                text + "  " + Lang.T("Атомов: ", "Atoms: ") + best.Atoms.Count, sSmall);
         }
     }
 
@@ -534,22 +685,22 @@ public class LabUI : MonoBehaviour
         if (lab == null) return;
 
         if (accelOn || builderOn || quarkOn) return;   // внизу стоит пульт того режима, что включён
-        float x = PanelRightPx + 20f;
-        if (Screen.width - x < 200f) return;
-        float y = Screen.height - cardHeight - 20f - 34f;
+        float x = PanelRightGui + 20f;
+        if (SW - x < 200f) return;
+        float y = SH - cardHeight - 20f - 34f;
 
-        if (GUI.Button(new Rect(x, y, 140f, 28f), "Убрать атомы", sTab)) lab.ClearZone();
+        if (GUI.Button(new Rect(x, y, 140f, 28f), Lang.T("Убрать атомы", "Clear atoms"), sTab)) lab.ClearZone();
 
         GUI.color = new Color(0.75f, 1f, 0.8f);
-        if (GUI.Button(new Rect(x + 148f, y, 180f, 28f), "Посмотреть реакцию", sTab)) Chemistry.React();
+        if (GUI.Button(new Rect(x + 148f, y, 180f, 28f), Lang.T("Посмотреть реакцию", "Run reaction"), sTab)) Chemistry.React();
         GUI.color = new Color(1f, 0.8f, 0.8f);
-        if (GUI.Button(new Rect(x + 336f, y, 140f, 28f), "Выход из игры", sTab)) lab.ExitGame();
+        if (GUI.Button(new Rect(x + 336f, y, 140f, 28f), Lang.T("Выход из игры", "Quit game"), sTab)) lab.ExitGame();
         GUI.color = Color.white;
 
         if (lab.Selected.Count > 0 || lab.ClipboardCount > 0)
             GUI.Label(new Rect(x, y - 20f, 520f, 18f),
-                "Выделено: " + lab.Selected.Count + "   ·   в буфере: " + lab.ClipboardCount +
-                "   ·   Ctrl+C копировать, Ctrl+V (Ctrl+М) вставить, Ctrl+A выделить всё", sSmall);
+                Lang.T("Выделено: ", "Selected: ") + lab.Selected.Count + Lang.T("   ·   в буфере: ", "   ·   clipboard: ") + lab.ClipboardCount +
+                Lang.T("   ·   Ctrl+C копировать, Ctrl+V (Ctrl+М) вставить, Ctrl+A выделить всё", "   ·   Ctrl+C copy, Ctrl+V paste, Ctrl+A select all"), sSmall);
     }
 
 
@@ -564,7 +715,7 @@ public class LabUI : MonoBehaviour
     {
         menuAtom = a;
         menuBondList = false;
-        menuPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
+        menuPos = new Vector2(screenPos.x / U, SH - screenPos.y / U);   // экран -> интерфейс
     }
 
     public void CloseMenu() { menuAtom = null; menuBondList = false; }
@@ -576,8 +727,8 @@ public class LabUI : MonoBehaviour
             if (menuAtom == null) return new Rect();
             int rows = 6 + (menuBondList ? menuAtom.Bonds.Count : 0);
             float w = 260f, h = 26f + rows * 24f;
-            float x = Mathf.Min(menuPos.x, Screen.width - w - 6f);
-            float y = Mathf.Min(menuPos.y, Screen.height - h - 6f);
+            float x = Mathf.Min(menuPos.x, SW - w - 6f);
+            float y = Mathf.Min(menuPos.y, SH - h - 6f);
             return new Rect(x, y, w, h);
         }
     }
@@ -600,13 +751,13 @@ public class LabUI : MonoBehaviour
         int used = 0;
         foreach (var b in menuAtom.Bonds) used += b.Order;
         GUI.Label(new Rect(r.x + 8f, y, r.width - 16f, 20f),
-            menuAtom.El.Name + " (" + menuAtom.El.Sym + ")   связей " + used + " из " + menuAtom.El.Valence, sSmall);
+            menuAtom.El.Name + " (" + menuAtom.El.Sym + Lang.T(")   связей ", ")   bonds ") + used + Lang.T(" из ", " of ") + menuAtom.El.MaxBonds, sSmall);
         y += 22f;
 
         if (menuAtom.Bonds.Count > 0)
         {
             if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f),
-                (menuBondList ? "- " : "+ ") + "Убрать связь с...", sTab)) menuBondList = !menuBondList;
+                (menuBondList ? "- " : "+ ") + Lang.T("Убрать связь с...", "Remove bond with..."), sTab)) menuBondList = !menuBondList;
             y += 24f;
 
             if (menuBondList)
@@ -614,33 +765,33 @@ public class LabUI : MonoBehaviour
                 foreach (var b in new List<Bond>(menuAtom.Bonds))
                 {
                     var other = b.Other(menuAtom);
-                    string kind = b.Order == 1 ? "одинарная" : (b.Order == 2 ? "двойная" : "тройная");
+                    string kind = b.Order == 1 ? Lang.T("одинарная", "single") : (b.Order == 2 ? Lang.T("двойная", "double") : Lang.T("тройная", "triple"));
                     if (GUI.Button(new Rect(r.x + 18f, y, r.width - 24f, 22f),
-                        "с " + other.El.Sym + " (" + kind + ")", sTab))
+                        Lang.T("с ", "with ") + other.El.Sym + " (" + kind + ")", sTab))
                     {
                         b.Break();
                         Lab.I.Recompute();
-                        Lab.I.Say("Связь " + menuAtom.El.Sym + "-" + other.El.Sym + " разорвана.", new Color(1f, 0.85f, 0.6f));
+                        Lab.I.Say(Lang.T("Связь ", "Bond ") + menuAtom.El.Sym + "-" + other.El.Sym + Lang.T(" разорвана.", " broken."), new Color(1f, 0.85f, 0.6f));
                         if (menuAtom.Bonds.Count == 0) menuBondList = false;
                     }
                     y += 24f;
                 }
             }
 
-            if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Убрать все связи", sTab))
+            if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), Lang.T("Убрать все связи", "Remove all bonds"), sTab))
             {
                 int n = menuAtom.Bonds.Count;
                 for (int i = menuAtom.Bonds.Count - 1; i >= 0; i--) menuAtom.Bonds[i].Break();
                 Lab.I.Recompute();
-                Lab.I.Say("Оторвано связей: " + n, new Color(1f, 0.85f, 0.6f));
+                Lab.I.Say(Lang.T("Оторвано связей: ", "Bonds broken: ") + n, new Color(1f, 0.85f, 0.6f));
                 CloseMenu();
                 return;
             }
             y += 24f;
         }
-        else { GUI.Label(new Rect(r.x + 8f, y, r.width - 16f, 20f), "связей нет", sNote); y += 46f; }
+        else { GUI.Label(new Rect(r.x + 8f, y, r.width - 16f, 20f), Lang.T("связей нет", "no bonds"), sNote); y += 46f; }
 
-        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Удалить атом", sTab))
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), Lang.T("Удалить атом", "Delete atom"), sTab))
         {
             menuAtom.Despawn();
             Lab.I.Recompute();
@@ -649,19 +800,19 @@ public class LabUI : MonoBehaviour
         }
         y += 24f;
 
-        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Заменить (выбери в таблице)", sTab))
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), Lang.T("Заменить (выбери в таблице)", "Replace (pick in the table)"), sTab))
         {
             replaceTarget = menuAtom;
             showPresets = false;
             open = true;
-            Lab.I.Say("Выбери элемент в таблице - " + menuAtom.El.Sym + " станет им. Связи, на которые не хватит запаса, оторвутся.",
+            Lab.I.Say(Lang.T("Выбери элемент в таблице - ", "Pick an element in the table - ") + menuAtom.El.Sym + Lang.T(" станет им. Связи, на которые не хватит запаса, оторвутся.", " will become it. Bonds beyond its valence will break."),
                 new Color(0.85f, 0.95f, 1f));
             CloseMenu();
             return;
         }
         y += 24f;
 
-        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), "Провести реакцию", sTab))
+        if (GUI.Button(new Rect(r.x + 6f, y, r.width - 12f, 22f), Lang.T("Провести реакцию", "Run reaction"), sTab))
         {
             CloseMenu();
             Chemistry.React();
@@ -687,13 +838,13 @@ public class LabUI : MonoBehaviour
         if (accelOn)
         {
             Lab.I.LookAt(Accelerator.Rig, 13f);
-            Lab.I.Say("Ускоритель. Щёлкни по гнезду, потом по элементу в таблице — и жми «Склеить вещества».",
+            Lab.I.Say(Lang.T("Ускоритель. Щёлкни по гнезду, потом по элементу в таблице — и жми «Склеить вещества».", "Accelerator. Click a slot, then an element in the table — then press 'Fuse'."),
                 new Color(0.6f, 0.9f, 1f));
         }
         else
         {
             Lab.I.LookAt(Lab.ZoneCenter, 14f);
-            Lab.I.Say("Назад в лабораторию.", new Color(0.8f, 0.9f, 1f));
+            Lab.I.Say(Lang.T("Назад в лабораторию.", "Back to the lab."), new Color(0.8f, 0.9f, 1f));
         }
     }
 
@@ -704,10 +855,10 @@ public class LabUI : MonoBehaviour
         var acc = Accelerator.I;
         if (acc == null) return;
 
-        float x = PanelRightPx + 20f;
-        float w = Mathf.Min(560f, Screen.width - x - 20f);
+        float x = PanelRightGui + 20f;
+        float w = Mathf.Min(560f, SW - x - 20f);
         if (w < 260f) return;
-        var r = new Rect(x, Screen.height - 176f, w, 156f);
+        var r = new Rect(x, SH - 176f, w, 156f);
 
         GUI.color = new Color(0f, 0f, 0f, 0.62f);
         GUI.DrawTexture(r, Texture2D.whiteTexture);
@@ -715,30 +866,30 @@ public class LabUI : MonoBehaviour
         GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), "УСКОРИТЕЛЬ ЧАСТИЦ", sTitle);
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), Lang.T("УСКОРИТЕЛЬ ЧАСТИЦ", "PARTICLE ACCELERATOR"), sTitle);
         GUI.Label(new Rect(r.x + 12f, r.y + 28f, r.width - 24f, 20f),
-            "Ядра складываются: номер нового элемента — сумма номеров. Так и получили всё тяжелее урана.", sSmall);
+            Lang.T("Ядра складываются: номер нового элемента — сумма номеров. Так и получили всё тяжелее урана.", "Nuclei add up: the new element number is the sum. This is how everything heavier than uranium was made."), sSmall);
 
         float bw = (r.width - 36f) / 3f;
-        DrawSlotButton(new Rect(r.x + 12f, r.y + 52f, bw, 40f), 0, acc.SlotA, "гнездо слева");
-        DrawSlotButton(new Rect(r.x + 18f + bw, r.y + 52f, bw, 40f), -1, acc.Result, "результат");
-        DrawSlotButton(new Rect(r.x + 24f + bw * 2f, r.y + 52f, bw, 40f), 1, acc.SlotB, "гнездо справа");
+        DrawSlotButton(new Rect(r.x + 12f, r.y + 52f, bw, 40f), 0, acc.SlotA, Lang.T("гнездо слева", "left slot"));
+        DrawSlotButton(new Rect(r.x + 18f + bw, r.y + 52f, bw, 40f), -1, acc.Result, Lang.T("результат", "result"));
+        DrawSlotButton(new Rect(r.x + 24f + bw * 2f, r.y + 52f, bw, 40f), 1, acc.SlotB, Lang.T("гнездо справа", "right slot"));
 
         GUI.color = new Color(0.6f, 0.95f, 1f);
-        if (GUI.Button(new Rect(r.x + 12f, r.y + 100f, bw * 1.6f, 30f), "Склеить вещества", sTab)) acc.Fuse();
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 100f, bw * 1.6f, 30f), Lang.T("Склеить вещества", "Fuse"), sTab)) acc.Fuse();
         GUI.color = Color.white;
-        if (acc.Result != null && GUI.Button(new Rect(r.x + 24f + bw * 1.6f, r.y + 100f, bw * 1.3f, 30f), "Забрать в зону", sTab))
+        if (acc.Result != null && GUI.Button(new Rect(r.x + 24f + bw * 1.6f, r.y + 100f, bw * 1.3f, 30f), Lang.T("Забрать в зону", "Send to zone"), sTab))
             acc.TakeResult();
 
         if (pendingSlot >= 0)
             GUI.Label(new Rect(r.x + 12f, r.y + 132f, r.width - 24f, 20f),
-                "Теперь выбери элемент в таблице слева — он встанет в гнездо.", sNote);
+                Lang.T("Теперь выбери элемент в таблице слева — он встанет в гнездо.", "Now pick an element in the table — it goes into the slot."), sNote);
         else if (Accelerator.Log.Count > 0)
         {
             // Журнал добытого: раньше результат жил только в гнезде и терялся при следующей
             // склейке. Теперь видно всё, что вышло за сеанс.
             int n = Mathf.Min(3, Accelerator.Log.Count);
-            var sb = new System.Text.StringBuilder("добыто: ");
+            var sb = new System.Text.StringBuilder(Lang.T("добыто: ", "made: "));
             for (int i = 0; i < n; i++) sb.Append(Accelerator.Log[Accelerator.Log.Count - 1 - i]).Append(i < n - 1 ? ";  " : "");
             GUI.Label(new Rect(r.x + 12f, r.y + 132f, r.width - 24f, 20f), sb.ToString(), sNote);
         }
@@ -751,7 +902,7 @@ public class LabUI : MonoBehaviour
         GUI.DrawTexture(r, Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        string text = el != null ? el.Sym + "  " + el.Name + "  (" + el.Z + ")" : "пусто";
+        string text = el != null ? el.Sym + "  " + el.Name + "  (" + el.Z + ")" : Lang.T("пусто", "empty");
         GUI.Label(new Rect(r.x + 8f, r.y + 2f, r.width - 12f, 18f), title, sSmall);
         GUI.Label(new Rect(r.x + 8f, r.y + 18f, r.width - 12f, 20f), text, sSmall);
 
@@ -774,13 +925,13 @@ public class LabUI : MonoBehaviour
             if (accelOn) { accelOn = false; if (Accelerator.I != null) Accelerator.I.Active = false; }
             if (quarkOn) { quarkOn = false; if (QuarkLab.I != null) QuarkLab.I.Active = false; }
             Lab.I.LookAt(AtomBuilder.Rig, 9f);
-            Lab.I.Say("Сборка атома. Протоны решают, ЧТО это за элемент; нейтроны — какой изотоп; электроны — заряд.",
+            Lab.I.Say(Lang.T("Сборка атома. Протоны решают, ЧТО это за элемент; нейтроны — какой изотоп; электроны — заряд.", "Atom builder. Protons decide WHICH element; neutrons — which isotope; electrons — the charge."),
                 new Color(1f, 0.8f, 0.5f));
         }
         else
         {
             Lab.I.LookAt(Lab.ZoneCenter, 14f);
-            Lab.I.Say("Назад в лабораторию.", new Color(0.8f, 0.9f, 1f));
+            Lab.I.Say(Lang.T("Назад в лабораторию.", "Back to the lab."), new Color(0.8f, 0.9f, 1f));
         }
     }
 
@@ -791,10 +942,10 @@ public class LabUI : MonoBehaviour
         var b = AtomBuilder.I;
         if (b == null) return;
 
-        float x = PanelRightPx + 20f;
-        float w = Mathf.Min(600f, Screen.width - x - 20f);
+        float x = PanelRightGui + 20f;
+        float w = Mathf.Min(600f, SW - x - 20f);
         if (w < 280f) return;
-        var r = new Rect(x, Screen.height - 232f, w, 212f);
+        var r = new Rect(x, SH - 232f, w, 212f);
 
         GUI.color = new Color(0f, 0f, 0f, 0.62f);
         GUI.DrawTexture(r, Texture2D.whiteTexture);
@@ -802,21 +953,21 @@ public class LabUI : MonoBehaviour
         GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), "СБОРКА АТОМА", sTitle);
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), Lang.T("СБОРКА АТОМА", "ATOM BUILDER"), sTitle);
 
         float rowY = r.y + 32f;
-        Counter(new Rect(r.x + 12f, rowY, r.width - 24f, 26f), "Протоны", b.Protons, new Color(0.9f, 0.3f, 0.25f), 0);
-        Counter(new Rect(r.x + 12f, rowY + 30f, r.width - 24f, 26f), "Нейтроны", b.Neutrons, new Color(0.7f, 0.7f, 0.75f), 1);
-        Counter(new Rect(r.x + 12f, rowY + 60f, r.width - 24f, 26f), "Электроны", b.Electrons, new Color(0.35f, 0.8f, 1f), 2);
+        Counter(new Rect(r.x + 12f, rowY, r.width - 24f, 26f), Lang.T("Протоны", "Protons"), b.Protons, new Color(0.9f, 0.3f, 0.25f), 0);
+        Counter(new Rect(r.x + 12f, rowY + 30f, r.width - 24f, 26f), Lang.T("Нейтроны", "Neutrons"), b.Neutrons, new Color(0.7f, 0.7f, 0.75f), 1);
+        Counter(new Rect(r.x + 12f, rowY + 60f, r.width - 24f, 26f), Lang.T("Электроны", "Electrons"), b.Electrons, new Color(0.35f, 0.8f, 1f), 2);
 
         // 🔴 21.09, владелец: «текст наехал». Приговор длинный и переносится, поэтому ему
         // отведена своя полоса в 56 пикселей, а кнопки стоят ПОД ней, а не поверх.
         GUI.Label(new Rect(r.x + 12f, rowY + 92f, r.width - 24f, 56f), b.Verdict, sSmall);
 
         GUI.color = new Color(1f, 0.8f, 0.45f);
-        if (GUI.Button(new Rect(r.x + 12f, r.y + 176f, 210f, 28f), "Записать в таблицу", sTab)) b.SaveToTable();
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 176f, 210f, 28f), Lang.T("Записать в таблицу", "Save to table"), sTab)) b.SaveToTable();
         GUI.color = Color.white;
-        if (GUI.Button(new Rect(r.x + 230f, r.y + 176f, 210f, 28f), "Записать и в зону", sTab)) b.SendToZone();
+        if (GUI.Button(new Rect(r.x + 230f, r.y + 176f, 210f, 28f), Lang.T("Записать и в зону", "Save and send to zone"), sTab)) b.SendToZone();
     }
 
     void Counter(Rect r, string title, int value, Color c, int kind)
@@ -860,13 +1011,13 @@ public class LabUI : MonoBehaviour
             if (accelOn) { accelOn = false; if (Accelerator.I != null) Accelerator.I.Active = false; }
             if (builderOn) { builderOn = false; if (AtomBuilder.I != null) AtomBuilder.I.Active = false; }
             Lab.I.LookAt(QuarkLab.Rig, 8f);
-            Lab.I.Say("Кварки. Протон — это uud, нейтрон — udd. Собранное уходит наверх, в сборку атома.",
+            Lab.I.Say(Lang.T("Кварки. Протон — это uud, нейтрон — udd. Собранное уходит наверх, в сборку атома.", "Quarks. A proton is uud, a neutron is udd. What you build goes up into the atom builder."),
                 new Color(0.85f, 0.7f, 1f));
         }
         else
         {
             Lab.I.LookAt(Lab.ZoneCenter, 14f);
-            Lab.I.Say("Назад в лабораторию.", new Color(0.8f, 0.9f, 1f));
+            Lab.I.Say(Lang.T("Назад в лабораторию.", "Back to the lab."), new Color(0.8f, 0.9f, 1f));
         }
     }
 
@@ -877,10 +1028,10 @@ public class LabUI : MonoBehaviour
         var q = QuarkLab.I;
         if (q == null) return;
 
-        float x = PanelRightPx + 20f;
-        float w = Mathf.Min(600f, Screen.width - x - 20f);
+        float x = PanelRightGui + 20f;
+        float w = Mathf.Min(600f, SW - x - 20f);
         if (w < 280f) return;
-        var r = new Rect(x, Screen.height - 216f, w, 196f);
+        var r = new Rect(x, SH - 216f, w, 196f);
 
         GUI.color = new Color(0f, 0f, 0f, 0.62f);
         GUI.DrawTexture(r, Texture2D.whiteTexture);
@@ -888,26 +1039,26 @@ public class LabUI : MonoBehaviour
         GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), Texture2D.whiteTexture);
         GUI.color = Color.white;
 
-        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), "СБОРКА ИЗ КВАРКОВ", sTitle);
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), Lang.T("СБОРКА ИЗ КВАРКОВ", "QUARK BUILDER"), sTitle);
         GUI.Label(new Rect(r.x + 12f, r.y + 28f, r.width - 24f, 20f),
-            "Верхний кварк даёт +2/3, нижний −1/3. Три кварка — барион.", sSmall);
+            Lang.T("Верхний кварк даёт +2/3, нижний −1/3. Три кварка — барион.", "An up quark gives +2/3, a down quark −1/3. Three quarks make a baryon."), sSmall);
 
         GUI.color = new Color(1f, 0.7f, 0.3f);
-        if (GUI.Button(new Rect(r.x + 12f, r.y + 52f, 150f, 30f), "+ верхний (u)", sTab)) q.Add(true);
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 52f, 150f, 30f), Lang.T("+ верхний (u)", "+ up (u)"), sTab)) q.Add(true);
         GUI.color = new Color(0.5f, 0.7f, 1f);
-        if (GUI.Button(new Rect(r.x + 170f, r.y + 52f, 150f, 30f), "+ нижний (d)", sTab)) q.Add(false);
+        if (GUI.Button(new Rect(r.x + 170f, r.y + 52f, 150f, 30f), Lang.T("+ нижний (d)", "+ down (d)"), sTab)) q.Add(false);
         GUI.color = Color.white;
-        if (GUI.Button(new Rect(r.x + 328f, r.y + 52f, 110f, 30f), "очистить", sTab)) q.Clear();
+        if (GUI.Button(new Rect(r.x + 328f, r.y + 52f, 110f, 30f), Lang.T("очистить", "clear"), sTab)) q.Clear();
 
         GUI.Label(new Rect(r.x + 12f, r.y + 88f, r.width - 24f, 22f),
-            "В тройке: " + q.Composition + "    заряд: " + (q.Charge >= 0f ? "+" : "") + q.Charge.ToString("0.##"), sTitle);
+            Lang.T("В тройке: ", "In the triple: ") + q.Composition + Lang.T("    заряд: ", "    charge: ") + (q.Charge >= 0f ? "+" : "") + q.Charge.ToString("0.##"), sTitle);
         GUI.Label(new Rect(r.x + 12f, r.y + 110f, r.width - 24f, 42f), q.Verdict, sSmall);
 
         GUI.color = new Color(0.85f, 0.7f, 1f);
-        if (GUI.Button(new Rect(r.x + 12f, r.y + 158f, 230f, 28f), "Собрать частицу", sTab)) q.Assemble();
+        if (GUI.Button(new Rect(r.x + 12f, r.y + 158f, 230f, 28f), Lang.T("Собрать частицу", "Build particle"), sTab)) q.Assemble();
         GUI.color = Color.white;
         GUI.Label(new Rect(r.x + 252f, r.y + 160f, r.width - 264f, 22f),
-            "собрано: протонов " + q.MadeProtons + ", нейтронов " + q.MadeNeutrons, sSmall);
+            Lang.T("собрано: протонов ", "built: protons ") + q.MadeProtons + Lang.T(", нейтронов ", ", neutrons ") + q.MadeNeutrons, sSmall);
     }
 
 
@@ -929,9 +1080,9 @@ public class LabUI : MonoBehaviour
         bool forSlot = pendingSlot >= 0;
         if (!forReplace && !forSlot) return;
 
-        float x = PanelRightPx + 6f;
+        float x = PanelRightGui + 6f;
         float w = 250f;
-        if (x + w > Screen.width - 10f) return;
+        if (x + w > SW - 10f) return;
         float h = 92f + Mathf.Ceil(COMMON.Length / 3f) * 30f;
         var r = new Rect(x, tableTop - 40f, w, h);
 
@@ -942,10 +1093,10 @@ public class LabUI : MonoBehaviour
         GUI.color = Color.white;
 
         string title = forReplace
-            ? "Заменить " + replaceTarget.El.Sym + " на:"
-            : "В гнездо " + (pendingSlot == 0 ? "слева" : "справа") + ":";
+            ? Lang.T("Заменить ", "Replace ") + replaceTarget.El.Sym + Lang.T(" на:", " with:")
+            : Lang.T("В гнездо ", "Into slot ") + (pendingSlot == 0 ? Lang.T("слева", "left") : Lang.T("справа", "right")) + ":";
         GUI.Label(new Rect(r.x + 10f, r.y + 6f, r.width - 20f, 22f), title, sTitle);
-        GUI.Label(new Rect(r.x + 10f, r.y + 28f, r.width - 20f, 20f), "ходовые — или любая клетка слева", sSmall);
+        GUI.Label(new Rect(r.x + 10f, r.y + 28f, r.width - 20f, 20f), Lang.T("ходовые — или любая клетка слева", "common ones — or any cell on the left"), sSmall);
 
         float cw = (r.width - 28f) / 3f;
         for (int i = 0; i < COMMON.Length; i++)
@@ -962,7 +1113,7 @@ public class LabUI : MonoBehaviour
             if (GUI.Button(cell, "", GUIStyle.none)) Choose(el);
         }
 
-        if (GUI.Button(new Rect(r.x + 10f, r.yMax - 32f, r.width - 20f, 24f), "отмена", sTab))
+        if (GUI.Button(new Rect(r.x + 10f, r.yMax - 32f, r.width - 20f, 24f), Lang.T("отмена", "cancel"), sTab))
         {
             replaceTarget = null;
             pendingSlot = -1;
@@ -985,7 +1136,7 @@ public class LabUI : MonoBehaviour
             Fx.Pop(1.2f);
             Fx.Sparks(replaceTarget.transform.position, new Color(0.8f, 0.95f, 1f), 25, 3f);
             Lab.I.Recompute();
-            Lab.I.Say(was + " стал " + el.Sym + " (" + el.Name + ").", new Color(0.85f, 0.95f, 1f));
+            Lab.I.Say(was + Lang.T(" стал ", " became ") + el.Sym + " (" + el.Name + ").", new Color(0.85f, 0.95f, 1f));
             replaceTarget = null;
         }
     }
@@ -1001,6 +1152,6 @@ public class LabUI : MonoBehaviour
         float lum = carrying.Color.r * 0.3f + carrying.Color.g * 0.59f + carrying.Color.b * 0.11f;
         sCell.normal.textColor = lum > 0.5f ? Color.black : Color.white;
         GUI.Label(r, carrying.Sym, sCell);
-        GUI.Label(new Rect(r.x - 30f, r.yMax + 2f, cw + 60f, 20f), "отпусти в зоне", sSmall);
+        GUI.Label(new Rect(r.x - 30f, r.yMax + 2f, cw + 60f, 20f), Lang.T("отпусти в зоне", "drop in the zone"), sSmall);
     }
 }

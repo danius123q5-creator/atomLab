@@ -96,6 +96,17 @@ if (Test-Path $apkSrc) {
     Write-Host ("APK: " + $apk + "  " + [math]::Round((Get-Item $apk).Length / 1MB, 1) + " MB")
 }
 
+# Linux build, if it was made (2.2+). Zipped as a folder; on Linux the player needs
+# chmod +x AtomLab.x86_64 - zip does not always keep the executable bit.
+$linDir = Join-Path $root "Build\Linux"
+$linZip = $null
+if (Test-Path (Join-Path $linDir "AtomLab.x86_64")) {
+    $linZip = Join-Path $root ("dist\AtomLab_" + $Ver + "_Linux.zip")
+    if (Test-Path $linZip) { Remove-Item $linZip }
+    Compress-Archive -Path (Join-Path $linDir "*") -DestinationPath $linZip -CompressionLevel Optimal
+    Write-Host ("Linux: " + $linZip + "  " + [math]::Round((Get-Item $linZip).Length / 1MB, 1) + " MB")
+}
+
 # ---- release ----
 # Refuse to touch an existing release: replacing one means deleting it first.
 $exists = $null
@@ -114,6 +125,7 @@ $uploadBase = $rel.upload_url -replace '\{.*\}$', ''
 $uh = @{ Authorization = "Bearer $tok"; "User-Agent" = "AtomLabPublish" }
 $files = @($zip)
 if ($apk) { $files += $apk }
+if ($linZip) { $files += $linZip }
 foreach ($f in $files) {
     $name = Split-Path $f -Leaf
     Write-Host ("Uploading " + $name + "...")

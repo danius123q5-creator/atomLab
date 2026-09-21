@@ -23,13 +23,50 @@ public static class Elements
     /// «неизвестный» перебивает «радиацию», иначе жёлтого в таблице не было бы совсем.</summary>
     public enum Paint { Metal, Nonmetal, Radioactive, Unknown, Synthetic, Assembled }
 
+    /// <summary>Высшая валентность — только там, где она выше обычной. Числа — настоящие
+    /// высшие степени окисления/ковалентности: S 6 (H2SO4, SF6), Cl 7 (HClO4), Mn 7 (KMnO4),
+    /// Xe 8 (XeO4), N 4 (HNO3: у азота четыре связи, пятой в жизни нет).</summary>
+    public static readonly System.Collections.Generic.Dictionary<string, int> HighValence =
+        new System.Collections.Generic.Dictionary<string, int>
+    {
+        {"B",4},{"N",4},{"P",5},{"S",6},{"Cl",7},{"As",5},{"Se",6},{"Br",7},{"Sb",5},{"Te",6},{"I",7},{"Bi",5},
+        {"Kr",2},{"Xe",8},{"Rn",6},{"Si",4},{"Ge",4},{"Sn",4},{"Pb",4},{"Tl",3},{"Ga",3},{"In",3},
+        {"Ti",4},{"V",5},{"Cr",6},{"Mn",7},{"Fe",6},{"Co",4},{"Ni",4},{"Cu",3},{"Zn",2},
+        {"Zr",4},{"Nb",5},{"Mo",6},{"Tc",7},{"Ru",8},{"Rh",6},{"Pd",4},{"Ag",3},{"Cd",2},
+        {"Hf",4},{"Ta",5},{"W",6},{"Re",7},{"Os",8},{"Ir",8},{"Pt",6},{"Au",5},{"Hg",2},
+        {"Ce",4},{"U",6},{"Np",7},{"Pu",7},{"Am",6},{"Th",4},{"Pa",5},
+    };
+
     public class El
     {
         public int Z;               // порядковый номер = число протонов
         public string Sym, Name;
+        public string NameEn;       // английское название; пусто -> показываем русское
         public float Mass;
         public int Group, Period;
-        public int Valence;         // сколько связей тянет в этой игре
+        public int Valence;         // обычная валентность: на ней считаются реакции и соли
+
+        /// <summary>🔴 21.09, владелец: «убери лимит подключения у атомов, а то некоторые
+        /// соединения нельзя собрать». Причина была в том, что у серы, азота, фосфора, хлора,
+        /// марганца одна валентность, а в жизни их несколько: H2SO4, SO3, HNO3, PCl5, KMnO4
+        /// руками не собирались.
+        ///
+        /// Лечим ПРЕДЕЛОМ СВЯЗЕЙ, а не валентностью. Valence трогать нельзя: по ней движок
+        /// реакций считает, сколько хлора идёт на натрий. Поднять её — и соль стала бы NaCl7.
+        /// Поэтому предел — отдельное число: высшая из настоящих валентностей элемента.
+        /// Водород, кислород, фтор, натрий остаются при своих — у них другой валентности нет,
+        /// и H с пятью соседями был бы уже не химией. Совсем без предела — это «Режим бога».
+        ///
+        /// У собранного иона (оранжевая клетка) предел — его заряд: там число задано руками.</summary>
+        public int MaxBonds
+        {
+            get
+            {
+                if (Assembled) return Valence;
+                int m;
+                return HighValence.TryGetValue(Sym, out m) ? Mathf.Max(m, Valence) : Valence;
+            }
+        }
         public float EN;            // электроотрицательность, 0 = не определена
         public Color Color;
         public Cls Class;

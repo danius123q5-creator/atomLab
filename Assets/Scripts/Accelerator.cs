@@ -98,7 +98,7 @@ public class Accelerator : MonoBehaviour
         if (slot == 0) SlotA = el; else SlotB = el;
         Fx.Pop(1.1f);
         Fx.Sparks(Rig + new Vector3(slot == 0 ? -3.4f : 3.4f, 0f, 0f), el.Color, 18, 2.2f);
-        if (Lab.I != null) Lab.I.Say("В гнездо " + (slot == 0 ? "слева" : "справа") + ": " + el.Name + ".", new Color(0.8f, 0.95f, 1f));
+        if (Lab.I != null) Lab.I.Say(Lang.T("В гнездо ", "Into slot ") + (slot == 0 ? Lang.T("слева", "left") : Lang.T("справа", "right")) + ": " + el.Name + ".", new Color(0.8f, 0.95f, 1f));
     }
 
     /// <summary>Склеить: номера ядер складываются, масса тоже. Если такой элемент в таблице
@@ -109,7 +109,7 @@ public class Accelerator : MonoBehaviour
         var lab = Lab.I;
         if (SlotA == null || SlotB == null)
         {
-            if (lab != null) lab.Say("Нужны оба гнезда: щёлкни по гнезду, потом по элементу в таблице.", new Color(1f, 0.9f, 0.6f));
+            if (lab != null) lab.Say(Lang.T("Нужны оба гнезда: щёлкни по гнезду, потом по элементу в таблице.", "Both slots are needed: click a slot, then an element in the table."), new Color(1f, 0.9f, 0.6f));
             return;
         }
 
@@ -128,15 +128,15 @@ public class Accelerator : MonoBehaviour
         {
             if (isNew)
             {
-                lab.Say("СИНТЕЗ: " + SlotA.Sym + " (" + SlotA.Z + ") + " + SlotB.Sym + " (" + SlotB.Z + ") = элемент " + z +
-                        " — " + Result.Name + " (" + Result.Sym + "). Такого в природе нет: записан в таблицу голубым.",
+                lab.Say(Lang.T("СИНТЕЗ: ", "FUSION: ") + SlotA.Sym + " (" + SlotA.Z + ") + " + SlotB.Sym + " (" + SlotB.Z + Lang.T(") = элемент ", ") = element ") + z +
+                        " — " + Result.Name + " (" + Result.Sym + Lang.T("). Такого в природе нет: записан в таблицу голубым.", "). It does not exist in nature: added to the table in blue."),
                         new Color(0.6f, 0.95f, 1f));
                 SaveSynthetic();
             }
             else
             {
-                lab.Say("СИНТЕЗ: " + SlotA.Sym + " + " + SlotB.Sym + " = " + Result.Name + " (" + Result.Sym + ", элемент " + z +
-                        "). Этот элемент в таблице уже есть — именно так его и получили в ускорителе.",
+                lab.Say(Lang.T("СИНТЕЗ: ", "FUSION: ") + SlotA.Sym + " + " + SlotB.Sym + " = " + Result.Name + " (" + Result.Sym + Lang.T(", элемент ", ", element ") + z +
+                        Lang.T("). Этот элемент в таблице уже есть — именно так его и получили в ускорителе.", "). This element is already in the table — this is exactly how it was made in accelerators."),
                         new Color(0.7f, 1f, 0.8f));
             }
         }
@@ -146,7 +146,7 @@ public class Accelerator : MonoBehaviour
         // элемент при этом не оставлял вообще никакого следа. Теперь добытое СРАЗУ кладётся
         // атомом в зону сборки и пишется в журнал ускорителя — потерять больше нечего.
         Atom.Spawn(Result, Lab.ZoneCenter + new Vector3(Random.Range(-1.2f, 1.2f), 0.6f, Random.Range(-1f, 1f)));
-        Log.Add(Result.Sym + "  " + Result.Name + "  (" + Result.Z + ")" + (isNew ? "  — новый" : ""));
+        Log.Add(Result.Sym + "  " + Result.Name + "  (" + Result.Z + ")" + (isNew ? Lang.T("  — новый", "  — new") : ""));
         if (lab != null) lab.Recompute();
 
         SlotA = SlotB = null;
@@ -163,7 +163,7 @@ public class Accelerator : MonoBehaviour
         if (Lab.I != null)
         {
             Lab.I.Recompute();
-            Lab.I.Say(Result.Name + " отправлен в зону сборки.", new Color(0.8f, 0.95f, 1f));
+            Lab.I.Say(Result.Name + Lang.T(" отправлен в зону сборки.", " sent to the build zone."), new Color(0.8f, 0.95f, 1f));
         }
         Result = null;
     }
@@ -184,7 +184,7 @@ public class Accelerator : MonoBehaviour
                       .Append((char)10);
             System.IO.File.WriteAllText(Path, sb.ToString());
         }
-        catch (System.Exception e) { Debug.LogWarning("Не вышло сохранить добытые элементы: " + e.Message); }
+        catch (System.Exception e) { Debug.LogWarning(Lang.T("Не вышло сохранить добытые элементы: ", "Could not save synthesized elements: ") + e.Message); }
     }
 
     public void LoadSynthetic()
@@ -202,9 +202,9 @@ public class Accelerator : MonoBehaviour
                 n++;
             }
             if (n > 0 && Lab.I != null)
-                Lab.I.Say("Добытых в ускорителе элементов в таблице: " + n + ".", new Color(0.6f, 0.9f, 1f));
+                Lab.I.Say(Lang.T("Добытых в ускорителе элементов в таблице: ", "Synthesized elements in the table: ") + n + ".", new Color(0.6f, 0.9f, 1f));
         }
-        catch (System.Exception e) { Debug.LogWarning("Не вышло прочитать добытые элементы: " + e.Message); }
+        catch (System.Exception e) { Debug.LogWarning(Lang.T("Не вышло прочитать добытые элементы: ", "Could not read synthesized elements: ") + e.Message); }
     }
 
     public static List<Elements.El> SyntheticList()

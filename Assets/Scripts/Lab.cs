@@ -18,6 +18,49 @@ public class Lab : MonoBehaviour
     /// правилам не соединяются ни с кем. Это нарочная неправда — песочница, а не урок.</summary>
     public static bool GodMode;
 
+    // ==================== 2D-режим (21.09, владелец: «добавь в игру 2d режим») ====================
+    // Плоский вид, как структурная формула на бумаге: камера смотрит строго спереди без
+    // перспективы, а все атомы держатся в одной плоскости — той, что проходит через центр
+    // зоны. Молекулы при этом не теряют связей: объёмные (метан-тетраэдр) просто
+    // распластываются, как их и рисуют в учебнике. Выключил — плоскость отпускается, и
+    // молекулы снова расправляются в объём сами, пружинами связей.
+    // Выбор запоминается между запусками.
+    static bool mode2DLoaded, mode2D;
+    public static bool Mode2D
+    {
+        get { if (!mode2DLoaded) { mode2D = PlayerPrefs.GetInt("atomlab.2d", 0) == 1; mode2DLoaded = true; } return mode2D; }
+        set { mode2D = value; mode2DLoaded = true; PlayerPrefs.SetInt("atomlab.2d", value ? 1 : 0); PlayerPrefs.Save(); }
+    }
+
+    /// <summary>Держим атомы в плоскости. Не только замком по оси Z, но и возвратом на
+    /// плоскость: замок держит скорость, а положение, набранное до включения, осталось бы.</summary>
+    void KeepFlat()
+    {
+        float z0 = ZoneCenter.z;
+        foreach (var a in Atom.All)
+        {
+            if (a == null || a.Body == null) continue;
+            if (Mode2D)
+            {
+                if ((a.Body.constraints & RigidbodyConstraints.FreezePositionZ) == 0)
+                    a.Body.constraints |= RigidbodyConstraints.FreezePositionZ;
+                var p = a.Body.position;
+                if (Mathf.Abs(p.z - z0) > 0.0005f)
+                {
+                    p.z = z0; a.Body.position = p;
+                    var v = a.Body.linearVelocity; v.z = 0f; a.Body.linearVelocity = v;
+                }
+            }
+            else if ((a.Body.constraints & RigidbodyConstraints.FreezePositionZ) != 0)
+            {
+                a.Body.constraints &= ~RigidbodyConstraints.FreezePositionZ;
+                // Лёгкий толчок из плоскости: иначе плоская молекула так и осталась бы плоской,
+                // ведь все силы связей лежат в той же плоскости.
+                a.Body.AddForce(new Vector3(0f, 0f, Random.Range(-0.6f, 0.6f)), ForceMode.VelocityChange);
+            }
+        }
+    }
+
     public static readonly Vector3 ZoneCenter = new Vector3(0f, 1.6f, 0f);
     public static readonly Vector3 ZoneHalf = new Vector3(5.0f, 3.0f, 4.0f);
 
@@ -30,6 +73,23 @@ public class Lab : MonoBehaviour
     // ——— перетаскивание атома мышью/пальцем ———
     Atom dragged;
     float dragDepth;
+    // ==================== тач (21.09, владелец: «управление для телефона») ====================
+    // Unity сама превращает ПЕРВЫЙ палец в левую кнопку мыши — поэтому «пальцем двигать атом»
+    // и выдвигать таблицу работало и раньше. Не хватало трёх вещей, их и добавляем:
+    //   • два пальца: развести/свести — приблизить/отдалить, повести вместе — вращать камеру;
+    //   • долгое нажатие на атом — его меню (правой кнопки у телефона нет, а удалить атом,
+    //     разорвать связь и провести реакцию можно только из меню);
+    //   • допуск попадания: атом на экране телефона мельче подушечки пальца.
+    // Всё это включается только при касаниях: у мыши Input.touchCount всегда 0, на ПК
+    // ни одно поведение не меняется.
+    bool touchGesture;          // были два пальца — до полного отпускания эмуляцию мыши не слушаем
+    Vector2 twoPrev; float pinchPrev;
+    Vector2 holdPos; float holdStart; Atom holdAtom; bool holdFired;
+
+    /// <summary>Сколько экранных пикселей в одном «пальцевом» миллиметре-эквиваленте:
+    /// на плотном экране палец сдвигается на больше пикселей при том же движении руки.</summary>
+    static float TouchK { get { return (Screen.dpi > 1f ? Screen.dpi : 320f) / 160f; } }
+
     Vector3 rmbDown;        // где нажали правую кнопку — чтобы отличить щелчок от вращения камеры
     float rmbTime;
 
@@ -85,7 +145,42 @@ public class Lab : MonoBehaviour
 
         bool overPanel = LabUI.I != null && LabUI.I.PointerOverUI;
 
-        if (Input.GetMouseButton(1) || (Input.GetMouseButton(0) && dragged == null && !overPanel && Input.GetKey(KeyCode.LeftAlt)))
+        if (Input.touchCount >= 2)
+        {
+            var t0 = Input.GetTouch(0); var t1 = Input.GetTouch(1);
+            Vector2 mid = (t0.position + t1.position) * 0.5f;
+            float dist = (t0.position - t1.position).magnitude;
+            // Новый палец — новая точка отсчёта, иначе камера прыгает на весь разнос пальцев.
+            if (!touchGesture || t0.phase == TouchPhase.Began || t1.phase == TouchPhase.Began)
+            { twoPrev = mid; pinchPrev = dist; }
+            touchGesture = true;
+            Vector2 dm = (mid - twoPrev) / TouchK;
+            if (Mode2D)
+            {
+                float k2 = camDist * 0.0016f;         // в 2D два пальца двигают вид, а не крутят
+                camTarget -= Cam.transform.right * dm.x * 18f * k2 * 0.3f;
+                camTarget -= Cam.transform.up * dm.y * 18f * k2 * 0.3f;
+            }
+            else
+            {
+                camYaw += dm.x * 0.35f;
+                camPitch = Mathf.Clamp(camPitch - dm.y * 0.3f, -60f, 80f);
+            }
+            // Щипок в ОТНОШЕНИИ, а не в разнице пикселей: одинаково на любом экране.
+            if (pinchPrev > 1f && dist > 1f) camDist = Mathf.Clamp(camDist * pinchPrev / dist, 4f, 30f);
+            twoPrev = mid; pinchPrev = dist;
+        }
+        else if (Input.touchCount == 0) touchGesture = false;
+
+        bool orbitGesture = Input.GetMouseButton(1) || (Input.GetMouseButton(0) && dragged == null && !overPanel && Input.GetKey(KeyCode.LeftAlt));
+        if (Mode2D && orbitGesture)
+        {
+            // В плоском виде вращать нечего — та же рука двигает вид.
+            float k2 = camDist * 0.0016f;
+            camTarget -= Cam.transform.right * Input.GetAxisRaw("Mouse X") * 18f * k2;
+            camTarget -= Cam.transform.up * Input.GetAxisRaw("Mouse Y") * 18f * k2;
+        }
+        else if (orbitGesture)
         {
             camYaw += Input.GetAxisRaw("Mouse X") * 3.2f;
             camPitch = Mathf.Clamp(camPitch - Input.GetAxisRaw("Mouse Y") * 2.4f, -60f, 80f);
@@ -117,7 +212,9 @@ public class Lab : MonoBehaviour
             Mathf.Clamp(camTarget.y, viewCenter.y - 3f, viewCenter.y + 3f),
             Mathf.Clamp(camTarget.z, viewCenter.z - 5f, viewCenter.z + 5f));
 
-        Quaternion rot = Quaternion.Euler(camPitch, camYaw, 0f);
+        Cam.orthographic = Mode2D;
+        if (Mode2D) Cam.orthographicSize = camDist * 0.42f;
+        Quaternion rot = Mode2D ? Quaternion.identity : Quaternion.Euler(camPitch, camYaw, 0f);
         Cam.transform.position = camTarget - rot * Vector3.forward * camDist;
         Cam.transform.rotation = rot;
 
@@ -126,7 +223,8 @@ public class Lab : MonoBehaviour
         float panelRight = (LabUI.I != null) ? LabUI.I.PanelRightPx : 0f;
         float f = Mathf.Clamp01(panelRight / Mathf.Max(1f, Screen.width));
         float shiftNdc = f * 0.5f;                       // середина свободной части вместо середины экрана
-        float halfWidthAtTarget = camDist * Mathf.Tan(Cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * Cam.aspect;
+        float halfWidthAtTarget = Mode2D ? Cam.orthographicSize * Cam.aspect
+                                         : camDist * Mathf.Tan(Cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * Cam.aspect;
         Cam.transform.position -= Cam.transform.right * (shiftNdc * 2f * halfWidthAtTarget);
     }
 
@@ -138,6 +236,38 @@ public class Lab : MonoBehaviour
 
         saveTimer -= Time.deltaTime;
         if (saveTimer <= 0f) { saveTimer = 8f; if (zoneDirty) SaveZone(); }
+        KeepFlat();
+
+        // Второй палец лёг — это жест камеры, а не перетаскивание и не рамка. Первый палец
+        // успел схватить атом или начать рамку за кадр-другой до второго: отменяем, рамку —
+        // без выделения. Пока пальцы не отпущены все, первый палец атомы не трогает.
+        if (touchGesture || Input.touchCount >= 2)
+        {
+            dragged = null; Banding = false; holdAtom = null;
+            return;
+        }
+
+        // Долгое нажатие на атом = меню атома (замена правой кнопки).
+        if (Input.touchCount == 1)
+        {
+            var t = Input.GetTouch(0);
+            if (t.phase == TouchPhase.Began)
+            {
+                holdPos = t.position; holdStart = Time.time; holdFired = false;
+                holdAtom = overPanel ? null : PickAtom(t.position);
+            }
+            else if (!holdFired && holdAtom != null)
+            {
+                if ((t.position - holdPos).magnitude > 12f * TouchK) holdAtom = null;   // повёл — значит тащит
+                else if (Time.time - holdStart > 0.5f)
+                {
+                    holdFired = true;
+                    dragged = null;                          // атом остаётся на месте, меню открыто
+                    if (LabUI.I != null) LabUI.I.OpenMenu(holdAtom, t.position);
+                    holdAtom = null;
+                }
+            }
+        }
 
         // Shift + ЛКМ — оторвать все связи атома. Без этого собранное нельзя переделать,
         // а «занято» становилось тупиком: только выкинуть атом целиком.
@@ -148,7 +278,7 @@ public class Lab : MonoBehaviour
             {
                 int n = t.Bonds.Count;
                 for (int i = t.Bonds.Count - 1; i >= 0; i--) t.Bonds[i].Break();
-                Say("Оторвано связей: " + n + " у " + t.El.Sym + ". Теперь он свободен.", new Color(1f, 0.85f, 0.6f));
+                Say(Lang.T("Оторвано связей: ", "Bonds broken: ") + n + Lang.T(" у ", " on ") + t.El.Sym + Lang.T(". Теперь он свободен.", ". It is free now."), new Color(1f, 0.85f, 0.6f));
                 Recompute();
                 return;
             }
@@ -219,7 +349,7 @@ public class Lab : MonoBehaviour
                 foreach (var a in new List<Atom>(Selected)) a.Despawn();
                 Selected.Clear();
                 Recompute();
-                Say("Убрано выделенных атомов: " + n, new Color(0.9f, 0.9f, 0.9f));
+                Say(Lang.T("Убрано выделенных атомов: ", "Selected atoms removed: ") + n, new Color(0.9f, 0.9f, 0.9f));
             }
             else if (victim != null)
             {
@@ -227,9 +357,9 @@ public class Lab : MonoBehaviour
                 if (dragged == victim) dragged = null;
                 victim.Despawn();
                 Recompute();
-                Say("Убран атом " + sym + ". Всю зону чистит кнопка «Убрать атомы».", new Color(0.9f, 0.9f, 0.9f));
+                Say(Lang.T("Убран атом ", "Removed atom ") + sym + Lang.T(". Всю зону чистит кнопка «Убрать атомы».", ". The 'Clear atoms' button empties the whole zone."), new Color(0.9f, 0.9f, 0.9f));
             }
-            else Say("Наведи на атом и нажми Del — уберётся он один.", new Color(0.9f, 0.9f, 0.7f));
+            else Say(Lang.T("Наведи на атом и нажми Del — уберётся он один.", "Hover over an atom and press Del — only that one is removed."), new Color(0.9f, 0.9f, 0.7f));
         }
         if (Input.GetKeyDown(KeyCode.Escape) && LabUI.I != null) LabUI.I.TogglePanel();
 
@@ -242,7 +372,7 @@ public class Lab : MonoBehaviour
         {
             Selected.Clear();
             foreach (var a in Atom.All) Selected.Add(a);
-            Say("Выделено всё: " + Selected.Count + " атомов.", new Color(0.8f, 0.95f, 1f));
+            Say(Lang.T("Выделено всё: ", "Selected all: ") + Selected.Count + Lang.T(" атомов.", " atoms."), new Color(0.8f, 0.95f, 1f));
         }
     }
 
@@ -267,7 +397,20 @@ public class Lab : MonoBehaviour
         RaycastHit hit;
         if (Physics.Raycast(Cam.ScreenPointToRay(screenPos), out hit, 200f))
             return hit.collider.GetComponentInParent<Atom>();
-        return null;
+        // Пальцем: промах по шару — берём ближайший атом в пределах подушечки пальца
+        // (около 7 мм). Мышью точность пиксельная, ей допуск не нужен и не даётся.
+        if (Input.touchCount == 0) return null;
+        float best = 45f * TouchK;
+        Atom pick = null;
+        foreach (var a in Atom.All)
+        {
+            if (a == null) continue;
+            Vector3 sp = Cam.WorldToScreenPoint(a.transform.position);
+            if (sp.z <= 0f) continue;
+            float d = ((Vector2)sp - (Vector2)screenPos).magnitude;
+            if (d < best) { best = d; pick = a; }
+        }
+        return pick;
     }
 
     /// <summary>Точка в зоне под курсором — куда падает элемент, брошенный из таблицы.</summary>
@@ -289,7 +432,7 @@ public class Lab : MonoBehaviour
         p.y = Mathf.Clamp(p.y, ZoneCenter.y - ZoneHalf.y, ZoneCenter.y + ZoneHalf.y);
         p.z = Mathf.Clamp(p.z, ZoneCenter.z - ZoneHalf.z, ZoneCenter.z + ZoneHalf.z);
         var a = Atom.Spawn(el, p);
-        if (el.Valence == 0 && !GodMode) Say(el.Name + " — благородный газ: ни с кем не соединяется. Так и в жизни.", new Color(0.7f, 0.9f, 1f));
+        if (el.MaxBonds == 0 && !GodMode) Say(el.Name + Lang.T(" — благородный газ: ни с кем не соединяется. Так и в жизни.", " is a noble gas: it bonds with nothing. Same as in real life."), new Color(0.7f, 0.9f, 1f));
         Recompute();
         return a;
     }
@@ -317,13 +460,13 @@ public class Lab : MonoBehaviour
             Vector3 sp = Cam.WorldToScreenPoint(a.transform.position);
             if (sp.z > 0f && r.Contains(new Vector2(sp.x, sp.y))) Selected.Add(a);
         }
-        Say("Выделено атомов: " + Selected.Count + ". Ctrl+C — копировать, Ctrl+V — вставить.",
+        Say(Lang.T("Выделено атомов: ", "Atoms selected: ") + Selected.Count + Lang.T(". Ctrl+C — копировать, Ctrl+V — вставить.", ". Ctrl+C to copy, Ctrl+V to paste."),
             new Color(0.8f, 0.95f, 1f));
     }
 
     public void CopySelection()
     {
-        if (Selected.Count == 0) { Say("Сначала выдели атомы рамкой.", new Color(1f, 0.9f, 0.7f)); return; }
+        if (Selected.Count == 0) { Say(Lang.T("Сначала выдели атомы рамкой.", "Select atoms with a frame first."), new Color(1f, 0.9f, 0.7f)); return; }
 
         var list = new List<Atom>(Selected);
         Vector3 c = Vector3.zero;
@@ -340,13 +483,13 @@ public class Lab : MonoBehaviour
             int i = list.IndexOf(b.A), j = list.IndexOf(b.B);
             if (i >= 0 && j >= 0) clipBonds.Add(new ClipBond { A = i, B = j, Order = b.Order });
         }
-        Say("Скопировано: " + clipAtoms.Count + " атомов и " + clipBonds.Count + " связей.",
+        Say(Lang.T("Скопировано: ", "Copied: ") + clipAtoms.Count + Lang.T(" атомов и ", " atoms and ") + clipBonds.Count + Lang.T(" связей.", " bonds."),
             new Color(0.8f, 0.95f, 1f));
     }
 
     public void PasteClipboard()
     {
-        if (clipAtoms == null || clipAtoms.Count == 0) { Say("Буфер пуст: сначала Ctrl+C.", new Color(1f, 0.9f, 0.7f)); return; }
+        if (clipAtoms == null || clipAtoms.Count == 0) { Say(Lang.T("Буфер пуст: сначала Ctrl+C.", "Clipboard is empty: press Ctrl+C first."), new Color(1f, 0.9f, 0.7f)); return; }
 
         Vector3 c = ZoneCenter + new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-0.8f, 0.8f), Random.Range(-1f, 1f));
         var made = new List<Atom>();
@@ -358,7 +501,7 @@ public class Lab : MonoBehaviour
         Fx.Pop(1.1f);
         Fx.Sparks(c, new Color(0.7f, 0.95f, 1f), 25, 3f);
         Recompute();
-        Say("Вставлено: " + made.Count + " атомов. Копия выделена — можно сразу оттащить.",
+        Say(Lang.T("Вставлено: ", "Pasted: ") + made.Count + Lang.T(" атомов. Копия выделена — можно сразу оттащить.", " atoms. The copy is selected — drag it away."),
             new Color(0.8f, 0.95f, 1f));
     }
 
@@ -366,7 +509,7 @@ public class Lab : MonoBehaviour
     /// там просто говорим об этом вслух, а не делаем вид, что вышли.</summary>
     public void ExitGame()
     {
-        Say("Выходим...", Color.white);
+        Say(Lang.T("Выходим...", "Quitting..."), Color.white);
         Application.Quit();
     }
 
@@ -379,11 +522,11 @@ public class Lab : MonoBehaviour
         for (int i = 0; i < list.Count; i++)
         {
             var a = list[i];
-            if (a.El.Valence == 0 && !GodMode) continue;
+            if (a.El.MaxBonds == 0 && !GodMode) continue;   // ксенон теперь соединяется, гелий — нет
             for (int j = i + 1; j < list.Count; j++)
             {
                 var b = list[j];
-                if (b.El.Valence == 0 && !GodMode) continue;
+                if (b.El.MaxBonds == 0 && !GodMode) continue;
                 float dist = Vector3.Distance(a.transform.position, b.transform.position);
                 // 🔴 21.09. С настоящими радиусами атомы стали вдвое мельче, и прежний
                 // множитель 1.25 требовал сводить их почти вплотную — вода переставала
@@ -398,18 +541,18 @@ public class Lab : MonoBehaviour
                     if (dist < existing.RestLength * 0.72f && existing.Raise())
                     {
                         changed = true;
-                        Say("Связь стала " + (existing.Order == 2 ? "двойной" : "тройной") + ": " + a.El.Sym + (existing.Order == 2 ? "=" : "≡") + b.El.Sym, new Color(0.8f, 1f, 0.8f));
+                        Say(Lang.T("Связь стала ", "The bond became ") + (existing.Order == 2 ? Lang.T("двойной", "double") : Lang.T("тройной", "triple")) + ": " + a.El.Sym + (existing.Order == 2 ? "=" : "≡") + b.El.Sym, new Color(0.8f, 1f, 0.8f));
                     }
                     continue;
                 }
 
-                if (dist <= touch && a.FreeValence > 0 && b.FreeValence > 0)
+                if (dist <= touch && a.FreeBondsWith(b) > 0 && b.FreeBondsWith(a) > 0)
                 {
                     Bond.Create(a, b);
                     ReactOnBond(a, b);
                     changed = true;
                 }
-                else if (dist <= touch * 0.95f && (a.FreeValence == 0 || b.FreeValence == 0))
+                else if (dist <= touch * 0.95f && (a.FreeBondsWith(b) == 0 || b.FreeBondsWith(a) == 0))
                 {
                     // Место кончилось — отталкиваем, чтобы было видно: связей больше нет.
                     // Толчок мягкий (было 6): сильный расталкивал соседние молекулы так, что
@@ -423,9 +566,18 @@ public class Lab : MonoBehaviour
                     if (Time.time > refusedAt + 2.5f)
                     {
                         refusedAt = Time.time;
-                        Atom full = a.FreeValence == 0 ? a : b;
-                        Say(full.El.Name + " (" + full.El.Sym + ") уже занят: все " + full.El.Valence +
-                            " связи заняты. Shift + ЛКМ по нему — оторвать соседей.",
+                        Atom full = a.FreeBondsWith(b) == 0 ? a : b;
+                        Atom other = full == a ? b : a;
+                        // 21.09. Было «все 2 связи заняты» у серы, которая держала шесть: число
+                        // бралось из предела для этой пары (с водородом у серы две), а не из того,
+                        // сколько занято. Показываем занятое, а если предел ниже занятого — говорим
+                        // почему: с этим соседом у атома меньше связей, чем с кислородом.
+                        int usedNow = full.UsedBonds;
+                        string why = full.CapWith(other) < full.El.MaxBonds && usedNow < full.El.MaxBonds
+                            ? Lang.T(" С " + other.El.Sym + " у него связей меньше, чем с кислородом.", " With " + other.El.Sym + " it bonds less than with oxygen.")
+                            : "";
+                        Say(full.El.Name + " (" + full.El.Sym + Lang.T(") уже занят: связей занято ", ") is full: bonds taken ") + usedNow + "." + why +
+                            Lang.T(" Shift + ЛКМ по нему — оторвать соседей.", " bonds are taken. Shift + left click on it breaks its neighbours off."),
                             new Color(1f, 0.8f, 0.5f));
                     }
                 }
@@ -475,7 +627,11 @@ public class Lab : MonoBehaviour
             m.FreeLeft = free;
             Mols.Add(m);
 
-            if (m.Atoms.Count > 2 && IsAlkaliInWater(m)) { Explode(m); continue; }
+            // 21.09. Правило «щелочной металл + O + H = натрий в воде, взрыв» взрывало и
+            // NaOH, KOH, пищевую соду — хотя все три есть в справочнике игры. Едкий натр нельзя
+            // было собрать вообще. Поймала это проверка 20 популярных соединений. Настоящее
+            // вещество — это уже итог реакции, а не металл в стакане: его не взрываем.
+            if (m.Atoms.Count > 2 && m.Info == null && IsAlkaliInWater(m)) { Explode(m); continue; }
 
             if (m.Info != null && m.Atoms.Count > 1 && !Discovered.Contains(m.Formula))
             {
@@ -484,7 +640,7 @@ public class Lab : MonoBehaviour
                 Fx.Flash(m.Center, new Color(0.5f, 1f, 0.6f), 7f, 10f, 0.7f);
                 Fx.Sparks(m.Center, new Color(0.55f, 1f, 0.65f), 60, 4.5f, 0.11f);
                 Score += 10 + m.Atoms.Count * 2;
-                Say("ОТКРЫТО: " + m.Info.Name + " (" + m.Formula + ") — " + m.Info.Note, new Color(0.6f, 1f, 0.6f));
+                Say(Lang.T("ОТКРЫТО: ", "DISCOVERED: ") + m.Info.Name + " (" + m.Formula + ") — " + m.Info.Note, new Color(0.6f, 1f, 0.6f));
                 CheckQuests(m.Formula);
                 SaveProgress();
             }
@@ -510,7 +666,7 @@ public class Lab : MonoBehaviour
         Fx.Flash(p, new Color(1f, 0.85f, 0.4f), 9f, 11f, 0.6f);
         Fx.Sparks(p, new Color(1f, 0.75f, 0.25f), 70, 6.5f, 0.13f);
         Atom metal = a.El.Class == Elements.Cls.Alkali ? a : b;
-        Say(metal.El.Name + " вспыхнул: щелочные металлы соединяются бурно, со светом и жаром.",
+        Say(metal.El.Name + Lang.T(" вспыхнул: щелочные металлы соединяются бурно, со светом и жаром.", " flashed: alkali metals react violently, with light and heat."),
             new Color(1f, 0.85f, 0.5f));
     }
 
@@ -528,7 +684,7 @@ public class Lab : MonoBehaviour
             if (dir.sqrMagnitude < 0.01f) dir = Random.onUnitSphere;
             a.Body.AddForce(dir * 14f, ForceMode.VelocityChange);
         }
-        Say("ВЗРЫВ: щелочной металл в воде. Так натрий и ведёт себя в стакане — вспышка и разлёт.",
+        Say(Lang.T("ВЗРЫВ: щелочной металл в воде. Так натрий и ведёт себя в стакане — вспышка и разлёт.", "EXPLOSION: an alkali metal in water. That is exactly what sodium does in a glass — a flash and scatter."),
             new Color(1f, 0.6f, 0.4f));
     }
 
@@ -553,7 +709,7 @@ public class Lab : MonoBehaviour
             {
                 q.Done = true;
                 Score += q.Reward;
-                Say("ЗАДАНИЕ ВЫПОЛНЕНО: " + q.Title + "  +" + q.Reward, new Color(1f, 0.9f, 0.5f));
+                Say(Lang.T("ЗАДАНИЕ ВЫПОЛНЕНО: ", "QUEST COMPLETE: ") + q.Title + "  +" + q.Reward, new Color(1f, 0.9f, 0.5f));
             }
         }
     }
@@ -594,7 +750,7 @@ public class Lab : MonoBehaviour
             System.IO.File.WriteAllText(ZonePath, sb.ToString());
             zoneDirty = false;
         }
-        catch (System.Exception e) { Debug.LogWarning("Не вышло сохранить зону: " + e.Message); }
+        catch (System.Exception e) { Debug.LogWarning(Lang.T("Не вышло сохранить зону: ", "Could not save the zone: ") + e.Message); }
     }
 
     public void LoadZone()
@@ -625,10 +781,10 @@ public class Lab : MonoBehaviour
             if (made.Count > 0)
             {
                 Recompute();
-                Say("Зона восстановлена: " + made.Count + " атомов с прошлого раза.", new Color(0.8f, 0.95f, 1f));
+                Say(Lang.T("Зона восстановлена: ", "Zone restored: ") + made.Count + Lang.T(" атомов с прошлого раза.", " atoms from last time."), new Color(0.8f, 0.95f, 1f));
             }
         }
-        catch (System.Exception e) { Debug.LogWarning("Не вышло прочитать зону: " + e.Message); }
+        catch (System.Exception e) { Debug.LogWarning(Lang.T("Не вышло прочитать зону: ", "Could not read the zone: ") + e.Message); }
     }
 
     void OnApplicationQuit() { SaveZone(); SaveProgress(); }

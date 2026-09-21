@@ -58,24 +58,24 @@ public class AtomBuilder : MonoBehaviour
     {
         get
         {
-            if (Protons < 1) return "Без протонов нет элемента: это просто нейтроны.";
+            if (Protons < 1) return Lang.T("Без протонов нет элемента: это просто нейтроны.", "No protons, no element: these are just neutrons.");
             var b = BaseElement;
             string who = b != null
-                ? b.Name + " (" + b.Sym + "), элемент " + Protons
-                : "элемент " + Protons + " — такого в природе нет";
+                ? b.Name + " (" + b.Sym + Lang.T("), элемент ", "), element ") + Protons
+                : Lang.T("элемент ", "element ") + Protons + Lang.T(" — такого в природе нет", " — does not exist in nature");
 
             int expected;
             bool stable = Elements.IsStableIsotope(Protons, Neutrons, out expected);
             string iso = stable
-                ? "изотоп устойчивый"
-                : "изотоп неустойчивый: обычных нейтронов здесь около " + expected + ", у тебя " + Neutrons;
+                ? Lang.T("изотоп устойчивый", "stable isotope")
+                : Lang.T("изотоп неустойчивый: обычных нейтронов здесь около ", "unstable isotope: the usual neutron count is about ") + expected + Lang.T(", у тебя ", ", you have ") + Neutrons;
 
             string ion;
-            if (Charge == 0) ion = "заряд ноль — нейтральный атом";
-            else if (Charge > 0) ion = "не хватает " + Charge + " электрон(ов) — положительный ион " + Charge + "+";
-            else ion = "лишних электронов " + (-Charge) + " — отрицательный ион " + (-Charge) + "-";
+            if (Charge == 0) ion = Lang.T("заряд ноль — нейтральный атом", "zero charge — neutral atom");
+            else if (Charge > 0) ion = Lang.T("не хватает ", "missing ") + Charge + Lang.T(" электрон(ов) — положительный ион ", " electron(s) — positive ion ") + Charge + "+";
+            else ion = Lang.T("лишних электронов ", "extra electrons ") + (-Charge) + Lang.T(" — отрицательный ион ", " — negative ion ") + (-Charge) + "-";
 
-            return who + ".  Массовое число " + MassNumber + ".  " + iso + ".  " + ion + ".";
+            return who + Lang.T(".  Массовое число ", ".  Mass number ") + MassNumber + ".  " + iso + ".  " + ion + ".";
         }
     }
 
@@ -92,7 +92,7 @@ public class AtomBuilder : MonoBehaviour
     {
         if (Protons < 1)
         {
-            if (Lab.I != null) Lab.I.Say("Нечего записывать: нужен хотя бы один протон.", new Color(1f, 0.9f, 0.6f));
+            if (Lab.I != null) Lab.I.Say(Lang.T("Нечего записывать: нужен хотя бы один протон.", "Nothing to save: at least one proton is needed."), new Color(1f, 0.9f, 0.6f));
             return null;
         }
         var el = Elements.AddAssembled(Protons, Neutrons, Charge);
@@ -101,7 +101,7 @@ public class AtomBuilder : MonoBehaviour
         Fx.Sparks(Rig, new Color(1f, 0.65f, 0.25f), 70, 5f);
         SaveAssembled();
         if (Lab.I != null)
-            Lab.I.Say("В таблицу записан " + el.Name + " (" + el.Sym + ") — оранжевая клетка внизу.",
+            Lab.I.Say(Lang.T("В таблицу записан ", "Added to the table: ") + el.Name + " (" + el.Sym + Lang.T(") — оранжевая клетка внизу.", ") — orange cell at the bottom."),
                 new Color(1f, 0.75f, 0.4f));
         return el;
     }
@@ -111,7 +111,7 @@ public class AtomBuilder : MonoBehaviour
         var el = SaveToTable();
         if (el == null) return;
         Atom.Spawn(el, Lab.ZoneCenter + new Vector3(Random.Range(-1f, 1f), 0.5f, Random.Range(-1f, 1f)));
-        if (Lab.I != null) { Lab.I.Recompute(); Lab.I.Say(el.Name + " отправлен в зону сборки.", new Color(1f, 0.8f, 0.5f)); }
+        if (Lab.I != null) { Lab.I.Recompute(); Lab.I.Say(el.Name + Lang.T(" отправлен в зону сборки.", " sent to the build zone."), new Color(1f, 0.8f, 0.5f)); }
     }
 
     // ==================== вид ====================
@@ -200,7 +200,7 @@ public class AtomBuilder : MonoBehaviour
                     sb.Append(el.Z).Append(' ').Append(el.Neutrons).Append(' ').Append(el.Charge).Append((char)10);
             System.IO.File.WriteAllText(Path, sb.ToString());
         }
-        catch (System.Exception e) { Debug.LogWarning("Не вышло сохранить собранные атомы: " + e.Message); }
+        catch (System.Exception e) { Debug.LogWarning(Lang.T("Не вышло сохранить собранные атомы: ", "Could not save assembled atoms: ") + e.Message); }
     }
 
     public void LoadAssembled()
@@ -217,9 +217,9 @@ public class AtomBuilder : MonoBehaviour
                 n++;
             }
             if (n > 0 && Lab.I != null)
-                Lab.I.Say("Собранных вручную атомов в таблице: " + n + ".", new Color(1f, 0.75f, 0.4f));
+                Lab.I.Say(Lang.T("Собранных вручную атомов в таблице: ", "Hand-assembled atoms in the table: ") + n + ".", new Color(1f, 0.75f, 0.4f));
         }
-        catch (System.Exception e) { Debug.LogWarning("Не вышло прочитать собранные атомы: " + e.Message); }
+        catch (System.Exception e) { Debug.LogWarning(Lang.T("Не вышло прочитать собранные атомы: ", "Could not read assembled atoms: ") + e.Message); }
     }
 }
 

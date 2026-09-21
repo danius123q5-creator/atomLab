@@ -67,7 +67,7 @@ public class QuarkLab : MonoBehaviour
         {
             var sb = new System.Text.StringBuilder();
             foreach (bool up in Slots) sb.Append(up ? "u" : "d");
-            return sb.Length == 0 ? "пусто" : sb.ToString();
+            return sb.Length == 0 ? Lang.T("пусто", "empty") : sb.ToString();
         }
     }
 
@@ -76,17 +76,17 @@ public class QuarkLab : MonoBehaviour
     {
         get
         {
-            if (Slots.Count == 0) return "Положи три кварка. Верхний даёт +2/3, нижний −1/3.";
+            if (Slots.Count == 0) return Lang.T("Положи три кварка. Верхний даёт +2/3, нижний −1/3.", "Put in three quarks. Up gives +2/3, down −1/3.");
             if (Slots.Count < 3)
-                return "Кварков " + Slots.Count + " из трёх (" + Composition + "), заряд пока " + Q(Charge) +
-                       ". Поодиночке кварки не живут — нужна тройка.";
+                return Lang.T("Кварков ", "Quarks ") + Slots.Count + Lang.T(" из трёх (", " of three (") + Composition + Lang.T("), заряд пока ", "), charge so far ") + Q(Charge) +
+                       Lang.T(". Поодиночке кварки не живут — нужна тройка.", ". Quarks do not live alone — you need a triple.");
 
             int up = 0;
             foreach (bool u in Slots) if (u) up++;
-            if (up == 2) return "uud — это ПРОТОН, заряд +1. Он и задаёт номер элемента.";
-            if (up == 1) return "udd — это НЕЙТРОН, заряд 0. Он задаёт изотоп.";
-            if (up == 3) return "uuu — дельта-барион Δ++, заряд +2. Существует, но живёт约 10⁻²³ секунды.";
-            return "ddd — дельта-барион Δ−, заряд −1. Тоже настоящий и тоже почти мгновенный.";
+            if (up == 2) return Lang.T("uud — это ПРОТОН, заряд +1. Он и задаёт номер элемента.", "uud is a PROTON, charge +1. It sets the element number.");
+            if (up == 1) return Lang.T("udd — это НЕЙТРОН, заряд 0. Он задаёт изотоп.", "udd is a NEUTRON, charge 0. It sets the isotope.");
+            if (up == 3) return Lang.T("uuu — дельта-барион Δ++, заряд +2. Существует, но живёт около 10⁻²³ секунды.", "uuu is the delta baryon Δ++, charge +2. It exists, but lives about 10⁻²³ seconds.");
+            return Lang.T("ddd — дельта-барион Δ−, заряд −1. Тоже настоящий и тоже почти мгновенный.", "ddd is the delta baryon Δ−, charge −1. Also real, also almost instant.");
         }
     }
 
@@ -101,7 +101,7 @@ public class QuarkLab : MonoBehaviour
     {
         if (Slots.Count >= 3)
         {
-            if (Lab.I != null) Lab.I.Say("Больше трёх в барион не влезает: убери лишнее или собери.", new Color(1f, 0.9f, 0.6f));
+            if (Lab.I != null) Lab.I.Say(Lang.T("Больше трёх в барион не влезает: убери лишнее или собери.", "A baryon holds only three: remove one or build."), new Color(1f, 0.9f, 0.6f));
             return;
         }
         Slots.Add(up);
@@ -117,7 +117,7 @@ public class QuarkLab : MonoBehaviour
         var lab = Lab.I;
         if (Slots.Count < 3)
         {
-            if (lab != null) lab.Say("Нужны ровно три кварка: барион меньше чем из трёх не выходит.", new Color(1f, 0.9f, 0.6f));
+            if (lab != null) lab.Say(Lang.T("Нужны ровно три кварка: барион меньше чем из трёх не выходит.", "Exactly three quarks are needed: a baryon cannot be made from fewer."), new Color(1f, 0.9f, 0.6f));
             return;
         }
 
@@ -133,20 +133,20 @@ public class QuarkLab : MonoBehaviour
         {
             MadeProtons++;
             if (bld != null) bld.Protons++;
-            if (lab != null) lab.Say("Собран ПРОТОН (uud). Он ушёл в сборку атома: протонов там теперь " +
+            if (lab != null) lab.Say(Lang.T("Собран ПРОТОН (uud). Он ушёл в сборку атома: протонов там теперь ", "PROTON built (uud). Sent to the atom builder: protons there now ") +
                 (bld != null ? bld.Protons.ToString() : "?") + ".", new Color(1f, 0.6f, 0.5f));
         }
         else if (up == 1)
         {
             MadeNeutrons++;
             if (bld != null) bld.Neutrons++;
-            if (lab != null) lab.Say("Собран НЕЙТРОН (udd). Он ушёл в сборку атома: нейтронов там теперь " +
+            if (lab != null) lab.Say(Lang.T("Собран НЕЙТРОН (udd). Он ушёл в сборку атома: нейтронов там теперь ", "NEUTRON built (udd). Sent to the atom builder: neutrons there now ") +
                 (bld != null ? bld.Neutrons.ToString() : "?") + ".", new Color(0.8f, 0.8f, 0.85f));
         }
         else
         {
             if (lab != null) lab.Say((up == 3 ? "Δ++ (uuu)" : "Δ− (ddd)") +
-                " собран — и тут же распался бы: такие барионы живут около 10⁻²³ секунды. В атом его не положить.",
+                Lang.T(" собран — и тут же распался бы: такие барионы живут около 10⁻²³ секунды. В атом его не положить.", " built — and would decay at once: such baryons live about 10⁻²³ seconds. It cannot go into an atom."),
                 new Color(1f, 0.8f, 0.5f));
         }
 

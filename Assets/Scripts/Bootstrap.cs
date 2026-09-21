@@ -75,6 +75,6 @@ public static class Bootstrap
         if (SelfTest.Requested) labGo.AddComponent<SelfTest>();
         else lab.LoadZone();               // в проверке начинаем с чистой зоны, иначе она увидит чужое
 
-        lab.Say("Тяни элемент из таблицы слева в зону. Начни с водорода и кислорода.", new Color(0.8f, 0.9f, 1f));
+        lab.Say(Lang.T("Тяни элемент из таблицы слева в зону. Начни с водорода и кислорода.", "Drag an element from the table into the zone. Start with hydrogen and oxygen."), new Color(0.8f, 0.9f, 1f));
     }
 }

@@ -82,7 +82,7 @@ public static class ReactionEngine
 
             return Run(lab, A, acidUnits, B, baseUnits,
                 new[] { salt, water }, new[] { 1, ch * v / g },
-                "нейтрализация: кислота отдаёт H, щёлочь — OH, из них выходит вода, остальное — соль",
+                Lang.T("нейтрализация: кислота отдаёт H, щёлочь — OH, из них выходит вода, остальное — соль", "neutralisation: the acid gives H, the base gives OH, they make water, the rest is salt"),
                 0.45f);
         }
 
@@ -98,8 +98,8 @@ public static class ReactionEngine
             {
                 if (rank > Reactions.HydrogenRank)
                 {
-                    Refuse(sym + " стоит ПОСЛЕ водорода в ряду активности — водород из кислоты он не вытесняет. " +
-                           "Поэтому медной ложкой и можно мешать соляную кислоту.");
+                    Refuse(sym + Lang.T(" стоит ПОСЛЕ водорода в ряду активности — водород из кислоты он не вытесняет. ", " is AFTER hydrogen in the activity series — it cannot push hydrogen out of an acid. ") +
+                           Lang.T("Поэтому медной ложкой и можно мешать соляную кислоту.", "That is why you can stir hydrochloric acid with a copper spoon."));
                     return null;
                 }
 
@@ -114,7 +114,7 @@ public static class ReactionEngine
 
                 return Run(lab, A, metalUnits, B, acidUnits,
                     new[] { salt, h2 }, new[] { 1, ch * v * mult / 2 },
-                    sym + " активнее водорода (ряд активности) — вытесняет его из кислоты",
+                    sym + Lang.T(" активнее водорода (ряд активности) — вытесняет его из кислоты", " is more active than hydrogen (activity series) — it pushes it out of the acid"),
                     0.75f);
             }
         }
@@ -141,11 +141,11 @@ public static class ReactionEngine
 
                 return Run(lab, A, metalUnits, B, waterUnits,
                     new[] { baseComp, h2 }, new[] { mult, v * mult / 2 },
-                    sym + " — активный металл, он рвёт воду: забирает OH и отпускает водород",
+                    sym + Lang.T(" — активный металл, он рвёт воду: забирает OH и отпускает водород", " is an active metal, it tears water apart: takes OH, releases hydrogen"),
                     1f);
             }
             if (el != null && rank > Reactions.Activity("Mg"))
-                Refuse(sym + " с холодной водой не реагирует: в ряду активности он слишком правый.");
+                Refuse(sym + Lang.T(" с холодной водой не реагирует: в ряду активности он слишком правый.", " does not react with cold water: it sits too far right in the activity series."));
         }
 
         // ---------- углеводород + кислород -> углекислый газ + вода ----------
@@ -162,7 +162,7 @@ public static class ReactionEngine
                 var water = new Dictionary<string, int> { { "H", 2 }, { "O", 1 } };
                 return Run(lab, A, fuelUnits / g, B, oxyUnits / g,
                     new[] { co2, water }, new[] { 4 * x / g, 2 * y / g },
-                    "горение: углерод уходит в углекислый газ, водород — в воду",
+                    Lang.T("горение: углерод уходит в углекислый газ, водород — в воду", "combustion: carbon goes into carbon dioxide, hydrogen into water"),
                     1f);
             }
         }
@@ -185,10 +185,10 @@ public static class ReactionEngine
                     Reactions.Add(baseComp, "H", v);
                     return Run(lab, A, 1, B, v * nMetal / 2 > 0 ? v * nMetal / 2 : 1,
                         new[] { baseComp }, new[] { nMetal },
-                        "оксид активного металла с водой даёт щёлочь — известь так и гасят",
+                        Lang.T("оксид активного металла с водой даёт щёлочь — известь так и гасят", "an active metal oxide with water gives a base — that is how lime is slaked"),
                         0.55f);
                 }
-                Refuse("оксид " + a.Metal + " с водой не реагирует: этот металл недостаточно активен.");
+                Refuse(Lang.T("оксид ", "oxide of ") + a.Metal + Lang.T(" с водой не реагирует: этот металл недостаточно активен.", " does not react with water: the metal is not active enough."));
             }
             else
             {
@@ -203,7 +203,7 @@ public static class ReactionEngine
                 var probe = Molecules.LookupByComposition(acid);
                 if (probe != null)
                     return Run(lab, A, 1, B, 1, new[] { acid }, new[] { 1 },
-                        "оксид неметалла с водой даёт кислоту — так и рождаются кислотные дожди",
+                        Lang.T("оксид неметалла с водой даёт кислоту — так и рождаются кислотные дожди", "a nonmetal oxide with water gives an acid — this is how acid rain forms"),
                         0.5f);
             }
         }
@@ -229,11 +229,11 @@ public static class ReactionEngine
                     return Run(lab, A, b.Residue.Charge * v2 / g / Mathf.Max(1, v1) > 0 ? v2 / g : 1,
                                B, oldSaltUnits * b.Comp[b.Metal] > 0 ? oldSaltUnits : 1,
                         new[] { newSalt, freed }, new[] { newSaltUnits, oldSaltUnits * b.Comp[b.Metal] },
-                        sym + " активнее, чем " + b.Metal + " — и выбивает его из соли",
+                        sym + Lang.T(" активнее, чем ", " is more active than ") + b.Metal + Lang.T(" — и выбивает его из соли", " — and knocks it out of the salt"),
                         0.6f);
                 }
-                Refuse(sym + " менее активен, чем " + b.Metal + " — из соли его не вытеснит. " +
-                       "Серебро медь из раствора не выгонит, а медь серебро — выгонит.");
+                Refuse(sym + Lang.T(" менее активен, чем ", " is less active than ") + b.Metal + Lang.T(" — из соли его не вытеснит. ", " — it cannot push it out of the salt. ") +
+                       Lang.T("Серебро медь из раствора не выгонит, а медь серебро — выгонит.", "Silver will not push copper out of a solution, but copper will push silver out."));
             }
         }
 
@@ -257,8 +257,8 @@ public static class ReactionEngine
                     int nMetal = salt[s1];
                     int nOther = salt[s2];
                     return Run(lab, A, nMetal, B, nOther, new[] { salt }, new[] { 1 },
-                        "прямой синтез: разница электроотрицательностей " + dEN.ToString("0.0") +
-                        (dEN >= 1.7f ? " — связь ионная, реакция бурная" : " — связь ковалентная, реакция спокойная"),
+                        Lang.T("прямой синтез: разница электроотрицательностей ", "direct synthesis: electronegativity difference ") + dEN.ToString("0.0") +
+                        (dEN >= 1.7f ? Lang.T(" — связь ионная, реакция бурная", " — ionic bond, violent reaction") : Lang.T(" — связь ковалентная, реакция спокойная", " — covalent bond, calm reaction")),
                         Mathf.Clamp01(dEN / 3f));
                 }
             }
