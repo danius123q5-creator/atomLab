@@ -44,8 +44,12 @@ if (-not $repo) {
 # The token goes in a header, NOT into the remote URL: a URL with a token inside is written
 # into .git/config and stays on disk forever.
 Push-Location $root
-git remote remove origin 2>$null | Out-Null
-git remote add origin ("https://github.com/$owner/$repoName.git")
+# git writes "No such remote" to stderr, and with $ErrorActionPreference = "Stop" PowerShell
+# turns ANY native stderr line into a terminating error - the script died here on a message
+# that meant nothing was wrong. Check the remote list instead of removing blind.
+$remoteUrl = "https://github.com/$owner/$repoName.git"
+$haveOrigin = (git remote) -contains "origin"
+if ($haveOrigin) { git remote set-url origin $remoteUrl } else { git remote add origin $remoteUrl }
 git -c http.proxy=$proxy -c http.extraHeader="Authorization: Bearer $tok" push -u origin HEAD:main
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "git push failed with code $LASTEXITCODE" }
 Pop-Location
