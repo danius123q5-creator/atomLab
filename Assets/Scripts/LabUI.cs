@@ -793,7 +793,10 @@ public class LabUI : MonoBehaviour
         float w = Mathf.Min(430f, SW - x - 20f);
         if (w < 160f) return;
         bool hasUse = best.Info != null && !string.IsNullOrEmpty(best.Info.Use);
-        float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f;   // +16 — строка расшифровки
+        // 21.09, владелец: «добавь под формулой размер молекулы. и напиши что не держится».
+        string unstable = MolFacts.Instability(best);
+        float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f + 18f   // +16 расшифровка, +18 размер
+                  + (unstable != null ? 44f : 0f);
         cardHeight = h;
         var r = new Rect(x, SH - h - 20f, w, h);
 
@@ -809,19 +812,22 @@ public class LabUI : MonoBehaviour
         var keepDec = sSmall.normal.textColor;
         sSmall.normal.textColor = new Color(0.8f, 0.85f, 0.95f);
         GUI.Label(new Rect(r.x + 14f, r.y + 36f, r.width - 24f, 18f), Lang.Decode(best.Formula), sSmall);
+        sSmall.normal.textColor = new Color(0.6f, 0.9f, 1f);
+        GUI.Label(new Rect(r.x + 14f, r.y + 54f, r.width - 24f, 18f), MolFacts.SizeLine(best), sSmall);
         sSmall.normal.textColor = keepDec;
+        float oy = 18f;   // всё ниже сдвинуто на строку размера
 
         if (best.Info != null)
         {
-            GUI.Label(new Rect(r.x + 14f, r.y + 54f, r.width - 24f, 22f), Lang.Name(best.Info), sTitle);
-            GUI.Label(new Rect(r.x + 14f, r.y + 76f, r.width - 24f, 38f), Lang.Note(best.Info), sSmall);
+            GUI.Label(new Rect(r.x + 14f, r.y + 54f + oy, r.width - 24f, 22f), Lang.Name(best.Info), sTitle);
+            GUI.Label(new Rect(r.x + 14f, r.y + 76f + oy, r.width - 24f, 38f), Lang.Note(best.Info), sSmall);
             if (hasUse)
             {
                 // 🔴 21.09, владелец: «добавь сюда область применения». Отдельной строкой и
                 // другим цветом — это не рассказ о веществе, а ответ «где я его встречу».
                 var keep = sSmall.normal.textColor;
                 sSmall.normal.textColor = new Color(1f, 0.85f, 0.45f);
-                GUI.Label(new Rect(r.x + 14f, r.y + 116f, r.width - 24f, 24f),
+                GUI.Label(new Rect(r.x + 14f, r.y + 116f + oy, r.width - 24f, 24f),
                           Lang.T("Применение: ", "Used for: ") + Lang.Use(best.Info), sSmall);
                 sSmall.normal.textColor = keep;
             }
@@ -844,8 +850,15 @@ public class LabUI : MonoBehaviour
             else
                 text = Lang.T("В справочнике игры такого нет. Это не значит, что его нет в природе.",
                               "Not in the game's reference book. That does not mean it does not exist.");
-            GUI.Label(new Rect(r.x + 14f, r.y + 54f, r.width - 24f, 34f),
+            GUI.Label(new Rect(r.x + 14f, r.y + 54f + oy, r.width - 24f, 34f),
                 text + "  " + Lang.T("Атомов: ", "Atoms: ") + best.Atoms.Count, sSmall);
+            if (unstable != null)
+            {
+                var keepU = sSmall.normal.textColor;
+                sSmall.normal.textColor = new Color(1f, 0.45f, 0.4f);
+                GUI.Label(new Rect(r.x + 14f, r.y + 88f + oy, r.width - 24f, 44f), unstable, sSmall);
+                sSmall.normal.textColor = keepU;
+            }
         }
     }
 

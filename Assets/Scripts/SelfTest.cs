@@ -182,6 +182,25 @@ public class SelfTest : MonoBehaviour
         yield return new WaitForSeconds(0.3f);
         bool linkOk = r1 == null && r2 == null && r3 != null && lnO.Bonds.Count == 2;
         Debug.Log("SELFTEST link by menu: O-H " + (r1 ?? "ok") + " | O-H " + (r2 ?? "ok") + " | третий H: " + (r3 ?? "НЕ отказал") + (linkOk ? " OK" : " MISMATCH"));
+
+        // 21.09: размер и «не держится». Вода — ~0.2 нм и без предупреждения; соль из двух разных
+        // металлов с кислородом и фтором — с предупреждением.
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Presets.SpawnPopular(new Presets.Pop { Formula = "H2O", Ru = "вода", En = "water" });
+        yield return new WaitForSeconds(0.4f); lab.Recompute();
+        string wSize = lab.Mols.Count > 0 ? MolFacts.SizeLine(lab.Mols[0]) : "";
+        string wUns = lab.Mols.Count > 0 ? MolFacts.Instability(lab.Mols[0]) : "x";
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Lab.GodMode = true;
+        var mf1 = Atom.Spawn(Elements.BySymbol("Fe"), c); var mf2 = Atom.Spawn(Elements.BySymbol("Ni"), c + Vector3.right * 3f);
+        var mf3 = Atom.Spawn(Elements.BySymbol("O"), c + Vector3.left * 3f); var mf4 = Atom.Spawn(Elements.BySymbol("F"), c + Vector3.up * 2f);
+        lab.BondByHand(mf1, mf2); lab.BondByHand(mf1, mf3); lab.BondByHand(mf2, mf4);
+        Lab.GodMode = false;
+        yield return new WaitForSeconds(0.3f); lab.Recompute();
+        string mUns = null; foreach (var mm in lab.Mols) if (mm.Atoms.Count >= 4) mUns = MolFacts.Instability(mm);
+        bool factsOk = wSize.Contains("0,") && wUns == null && mUns != null;
+        Debug.Log("SELFTEST facts: вода «" + wSize + "» | металлы: " + (mUns ?? "НЕТ предупреждения") + (factsOk ? " OK" : " MISMATCH"));
+        lab.ClearZone();
         lab.ClearZone();
         lab.ClearZone();
 
