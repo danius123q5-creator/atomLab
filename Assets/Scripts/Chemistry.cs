@@ -111,6 +111,16 @@ public static class Chemistry
             return;
         }
 
+        if (Lab.Mode >= Lab.Level.Uni)
+        {
+            // На уровнях ВУЗник и Эйнштейн «собрать из атомов что получится» выключено: это
+            // не химия, а арифметика состава. Нет правила — нет реакции, так и говорим.
+            lab.Say(Lang.T("Реакции не будет: ни одно правило не подходит к тому, что лежит в зоне. На уровне «", "No reaction: no rule fits what is in the zone. On the «") +
+                    Lab.LevelName(Lab.Mode) + Lang.T("» пересборка «что получится» выключена — только настоящие реакции.", "» level the «whatever fits» rebuild is off — real reactions only."),
+                    new Color(1f, 0.85f, 0.6f));
+            return;
+        }
+
         Vector3 boom = Vector3.zero;
         foreach (var a in Atom.All) boom += a.transform.position;
         boom /= Atom.All.Count;

@@ -38,6 +38,7 @@ public class Atom : MonoBehaviour
     /// двухвалентна (H2S), хлор одновалентен (HCl, NaCl). Это правило и стоит здесь.</summary>
     public int CapWith(Atom partner)
     {
+        if (Lab.Mode == Lab.Level.Fun) return El.MaxBonds;   // Фан: собирается почти всё
         bool high = partner != null && partner.El.EN > 0f && El.EN > 0f && partner.El.EN > El.EN;
         return high ? El.MaxBonds : El.Valence;
     }

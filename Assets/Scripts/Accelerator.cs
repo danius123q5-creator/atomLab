@@ -133,6 +133,8 @@ public class Accelerator : MonoBehaviour
                         new Color(0.6f, 0.95f, 1f));
                 SaveSynthetic();
             }
+            string nuc = MolFacts.NuclearNote(SlotA, SlotB, z);
+            if (nuc != null) lab.Say(lab.Toast + "   " + nuc, lab.ToastColor);
             else
             {
                 lab.Say(Lang.T("СИНТЕЗ: ", "FUSION: ") + SlotA.Sym + " + " + SlotB.Sym + " = " + Result.Name + " (" + Result.Sym + Lang.T(", элемент ", ", element ") + z +

@@ -71,6 +71,7 @@ public class SelfTest : MonoBehaviour
 
     IEnumerator Start()
     {
+        Lab.Mode = Lab.Level.School;   // проверка идёт на школьном уровне, что бы ни выбрал игрок (в настройки не пишется)
         yield return new WaitForSeconds(0.5f);
         var lab = Lab.I;
         var H = Elements.BySymbol("H");
@@ -159,6 +160,29 @@ public class SelfTest : MonoBehaviour
         }
         lab.ClearZone();
         Debug.Log("SELFTEST popular bad=" + popBad + " of " + Presets.Grid.Length);
+
+        // 21.09: уровни точности.
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Lab.Mode = Lab.Level.Fun;
+        var lvS = Atom.Spawn(Elements.BySymbol("S"), c);
+        for (int q = 0; q < 3; q++) lab.BondByHand(lvS, Atom.Spawn(Elements.BySymbol("H"), c + Random.onUnitSphere * 2.5f));
+        int funBonds = lvS.Bonds.Count;
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Lab.Mode = Lab.Level.Uni;
+        var lvC = Atom.Spawn(Elements.BySymbol("C"), c);
+        for (int q = 0; q < 3; q++) lab.BondByHand(lvC, Atom.Spawn(Elements.BySymbol("H"), c + Random.onUnitSphere * 2.5f));
+        yield return new WaitForSeconds(0.2f); lab.Recompute();
+        string uniRad = null, uniPol = null; foreach (var mm in lab.Mols) if (mm.Atoms.Count == 4) { uniRad = MolFacts.Instability(mm); uniPol = MolFacts.Polarity(mm); }
+        lab.ClearZone(); yield return new WaitForSeconds(0.15f);
+        Lab.Mode = Lab.Level.Einstein;
+        Presets.SpawnPopular(new Presets.Pop { Formula = "H2O", Ru = "вода", En = "water" });
+        yield return new WaitForSeconds(0.4f); lab.Recompute();
+        string einE = lab.Mols.Count > 0 ? MolFacts.BondEnergy(lab.Mols[0]) : null;
+        string nuc = MolFacts.NuclearNote(Elements.BySymbol("U"), Elements.BySymbol("Ca"), 112);
+        Lab.Mode = Lab.Level.School;
+        lab.ClearZone();
+        bool lvlOk = funBonds == 3 && uniRad != null && uniPol != null && einE != null && einE.Contains("926") && nuc != null;
+        Debug.Log("SELFTEST levels: фан S+3H связей " + funBonds + " | вуз радикал: " + (uniRad != null ? "есть" : "НЕТ") + " | " + uniPol + " | эйнштейн вода: " + einE + " | U+Ca: " + nuc + (lvlOk ? " OK" : " MISMATCH"));
         bool verOk = Updater.Newer("2.6", "2.5") && Updater.Newer("2.10", "2.9") && !Updater.Newer("2.5", "2.5") && !Updater.Newer("2.4", "2.5") && Updater.Newer("v3.0", "2.9");
         Debug.Log("SELFTEST updater versions: " + (verOk ? "OK" : "MISMATCH") + " (эта сборка " + Updater.Version + ", Application.version " + Application.version + ")");
 

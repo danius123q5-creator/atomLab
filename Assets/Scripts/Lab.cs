@@ -18,6 +18,41 @@ public class Lab : MonoBehaviour
     /// правилам не соединяются ни с кем. Это нарочная неправда — песочница, а не урок.</summary>
     public static bool GodMode;
 
+    // ==================== уровни точности (21.09, владелец) ====================
+    // «сделай в игре уровни: фан — немного точности; школяр — для школьного обучения;
+    //  ВУЗник — серьёзная физика; эйнштейн — гений».
+    //   Фан      — собирается почти всё (высшая валентность у всех), без предупреждений и советов;
+    //   Школяр   — как было: школьная химия, предупреждения про металлы, советы;
+    //   ВУЗник   — + радикалы нестабильны, полярность связей, реакции ТОЛЬКО по правилам;
+    //   Эйнштейн — + энергия связей в кДж/моль, кулоновский барьер и время жизни ядер.
+    public enum Level { Fun, School, Uni, Einstein }
+    static bool levelLoaded; static Level level = Level.School;
+    public static Level Mode
+    {
+        get { if (!levelLoaded) { level = (Level)Mathf.Clamp(PlayerPrefs.GetInt("atomlab.level", 1), 0, 3); levelLoaded = true; } return level; }
+        set { level = value; levelLoaded = true; if (SelfTest.Requested) return; PlayerPrefs.SetInt("atomlab.level", (int)value); PlayerPrefs.Save(); }
+    }
+    public static string LevelName(Level l)
+    {
+        switch (l)
+        {
+            case Level.Fun: return Lang.T("Фан", "Fun");
+            case Level.School: return Lang.T("Школяр", "School");
+            case Level.Uni: return Lang.T("ВУЗник", "University");
+            default: return Lang.T("Эйнштейн", "Einstein");
+        }
+    }
+    public static string LevelHint(Level l)
+    {
+        switch (l)
+        {
+            case Level.Fun: return Lang.T("Фан: собирается почти всё, без занудства. Точности немного — это игрушка.", "Fun: almost anything goes, no nagging. Little accuracy — it is a toy.");
+            case Level.School: return Lang.T("Школяр: школьная химия — валентность, ряд активности, заряды ионов, советы.", "School: school chemistry — valence, activity series, ion charges, hints.");
+            case Level.Uni: return Lang.T("ВУЗник: радикалы нестабильны, видна полярность связей, реакции только по правилам — «собрать что получится» выключено.", "University: radicals are unstable, bond polarity is shown, reactions only by the rules.");
+            default: return Lang.T("Эйнштейн: плюс энергия связей в кДж/моль, кулоновский барьер и время жизни ядер в ускорителе.", "Einstein: plus bond energies in kJ/mol, the Coulomb barrier and nuclear lifetimes in the accelerator.");
+        }
+    }
+
     // ==================== 2D-режим (21.09, владелец: «добавь в игру 2d режим») ====================
     // Плоский вид, как структурная формула на бумаге: камера смотрит строго спереди без
     // перспективы, а все атомы держатся в одной плоскости — той, что проходит через центр
@@ -94,6 +129,7 @@ public class Lab : MonoBehaviour
     // Всё это включается только при касаниях: у мыши Input.touchCount всегда 0, на ПК
     // ни одно поведение не меняется.
     bool touchGesture;          // были два пальца — до полного отпускания эмуляцию мыши не слушаем
+    bool oneFingerOrbit;        // один палец по пустому месту — крутим камеру
     Vector2 twoPrev; float pinchPrev;
     Vector2 holdPos; float holdStart; Atom holdAtom; bool holdFired;
 
@@ -181,7 +217,22 @@ public class Lab : MonoBehaviour
             if (pinchPrev > 1f && dist > 1f) camDist = Mathf.Clamp(camDist * pinchPrev / dist, 4f, 30f);
             twoPrev = mid; pinchPrev = dist;
         }
-        else if (Input.touchCount == 0) touchGesture = false;
+        else if (Input.touchCount == 0) { touchGesture = false; oneFingerOrbit = false; }
+        if (oneFingerOrbit && Input.touchCount == 1 && !touchGesture && dragged == null)
+        {
+            Vector2 d1 = Input.GetTouch(0).deltaPosition / TouchK;
+            if (Mode2D)
+            {
+                float k2 = camDist * 0.0016f;
+                camTarget -= Cam.transform.right * d1.x * 18f * k2 * 0.3f;
+                camTarget -= Cam.transform.up * d1.y * 18f * k2 * 0.3f;
+            }
+            else
+            {
+                camYaw += d1.x * 0.35f;
+                camPitch = Mathf.Clamp(camPitch - d1.y * 0.3f, -60f, 80f);
+            }
+        }
 
         bool orbitGesture = Input.GetMouseButton(1) || (Input.GetMouseButton(0) && dragged == null && !overPanel && Input.GetKey(KeyCode.LeftAlt));
         if (Mode2D && orbitGesture)
@@ -305,6 +356,13 @@ public class Lab : MonoBehaviour
             {
                 dragged = a;
                 dragDepth = Cam.WorldToScreenPoint(a.transform.position).z;
+            }
+            else if (Input.touchCount > 0)
+            {
+                // 21.09, владелец: «в апк убери селектор, пусть свайп одним пальцем крутит экран».
+                // На телефоне рамка выделения мешала: палец по пустому месту тянул рамку, а
+                // хотелось повернуть вид. Теперь один палец по пустому — вращение (в 2D — сдвиг).
+                oneFingerOrbit = true;
             }
             else
             {

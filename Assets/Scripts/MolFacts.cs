@@ -63,7 +63,14 @@ public static class MolFacts
     /// Возвращает null, если сказать нечего.</summary>
     public static string Instability(Lab.Mol m)
     {
-        if (m == null || m.Info != null || m.Atoms.Count < 3) return null;
+        if (m == null || m.Info != null) return null;
+        if (Lab.Mode == Lab.Level.Fun) return null;                          // Фан: без занудства
+        // ВУЗник и выше: радикал (свободные связи) — нестабилен сам по себе.
+        string radical = (Lab.Mode >= Lab.Level.Uni && m.FreeLeft > 0 && m.Atoms.Count >= 2)
+            ? Lang.T("свободных связей ", "free bonds ") + m.FreeLeft + Lang.T(" — это радикал: в жизни он живёт доли секунды и вцепляется в первое, что встретит",
+                                                                              " — a radical: in reality it lives a fraction of a second and grabs the first thing it meets")
+            : null;
+        if (m.Atoms.Count < 3 && radical == null) return null;
 
         var metals = new List<string>();
         var have = new HashSet<string>();
@@ -81,9 +88,11 @@ public static class MolFacts
         // 21.09 (скриншот владельца: C15H21Fe4N2O9P — четыре железа в органике, а игра молчала).
         // Несколько атомов металла в одной НЕИЗВЕСТНОЙ молекуле — тоже не держится: металл в
         // органике бывает (ферроцен, гем), но по одному атому и в особом окружении.
-        if (metals.Count < 2 && !metalMetal && metalAtoms < 2) return null;
+        if (metals.Count < 2 && !metalMetal && metalAtoms < 2)
+            return radical == null ? null : Lang.T("Так не держится: ", "This would not hold together: ") + radical + ".";
 
         var why = new List<string>();
+        if (radical != null) why.Add(radical);
         if (metals.Count >= 2)
             why.Add(Lang.T("в одной частице ", "one particle holds ") + metals.Count + (metals.Count < 5 ? Lang.T(" разных металла (", " different metals (") : Lang.T(" разных металлов (", " different metals (")) +
                     string.Join(", ", metals.ToArray()) + Lang.T(") — металлы не собираются в одну молекулу, они отдают электроны и становятся ионами",
@@ -135,6 +144,7 @@ public static class MolFacts
     public static string Advice(Lab.Mol m)
     {
         if (m == null || m.Info != null || m.Atoms.Count < 2) return null;
+        if (Lab.Mode == Lab.Level.Fun) return null;                          // Фан: без советов
         var have = new Dictionary<string, int>();
         var metals = new List<string>();
         foreach (var a in m.Atoms)
@@ -196,5 +206,82 @@ public static class MolFacts
                             "far from any real substance — big random assemblies like this do not occur in nature; start from a smaller core"));
         if (tips.Count == 0) return null;
         return Lang.T("Для стабильности: ", "For stability: ") + string.Join("; ", tips.ToArray()) + ".";
+    }
+
+    // ==================== ВУЗник: полярность ====================
+
+    /// <summary>Полярность связей по разности электроотрицательностей: меньше 0.4 —
+    /// неполярная, до 1.7 — полярная, от 1.7 — ионная. Плюс самая полярная связь.</summary>
+    public static string Polarity(Lab.Mol m)
+    {
+        if (m == null || Lab.Mode < Lab.Level.Uni) return null;
+        int non = 0, pol = 0, ion = 0; float best = -1f; string bestPair = "";
+        foreach (var a in m.Atoms)
+            foreach (var b in a.Bonds)
+            {
+                var o = b.Other(a);
+                if (o == null || o.GetInstanceID() < a.GetInstanceID()) continue;
+                if (a.El.EN <= 0f || o.El.EN <= 0f) continue;
+                float d = Mathf.Abs(a.El.EN - o.El.EN);
+                if (d < 0.4f) non++; else if (d < 1.7f) pol++; else ion++;
+                if (d > best) { best = d; bestPair = a.El.Sym + "–" + o.El.Sym; }
+            }
+        if (non + pol + ion == 0) return null;
+        return Lang.T("Связи: неполярных ", "Bonds: nonpolar ") + non + Lang.T(", полярных ", ", polar ") + pol + Lang.T(", ионных ", ", ionic ") + ion +
+               Lang.T(" · самая полярная ", " · most polar ") + bestPair + Lang.T(" (ΔЭО ", " (ΔEN ") + best.ToString("0.00") + ")";
+    }
+
+    // ==================== Эйнштейн: энергия связей ====================
+
+    // Средние энергии связей, кДж/моль (справочные, для газовой фазы). Ключ — пара символов
+    // по алфавиту и кратность.
+    static readonly Dictionary<string, float> BE = new Dictionary<string, float>
+    {
+        {"H-H1",436},{"C-H1",413},{"H-N1",391},{"H-O1",463},{"F-H1",567},{"Cl-H1",431},{"Br-H1",366},{"H-I1",299},{"H-S1",363},{"H-P1",322},{"H-Si1",318},
+        {"C-C1",348},{"C-C2",614},{"C-C3",839},{"C-N1",293},{"C-N2",615},{"C-N3",891},{"C-O1",358},{"C-O2",745},{"C-O3",1072},
+        {"C-F1",485},{"C-Cl1",328},{"Br-C1",276},{"C-I1",240},{"C-S1",259},{"C-S2",577},{"C-Si1",301},
+        {"N-N1",163},{"N-N2",418},{"N-N3",941},{"N-O1",201},{"N-O2",607},{"F-N1",272},{"Cl-N1",200},
+        {"O-O1",146},{"O-O2",495},{"F-O1",190},{"Cl-O1",203},{"O-S1",265},{"O-S2",523},{"S-S1",266},{"O-P1",335},{"O-P2",544},
+        {"Cl-P1",326},{"O-Si1",452},{"F-F1",155},{"Cl-Cl1",242},{"Br-Br1",193},{"I-I1",151},{"F-S1",327},{"F-Xe1",133},
+    };
+
+    /// <summary>Сумма энергий связей — сколько надо вложить, чтобы разобрать молекулу на атомы.
+    /// Считаем по тем связям, для которых есть справочное число, и честно говорим, сколько их.</summary>
+    public static string BondEnergy(Lab.Mol m)
+    {
+        if (m == null || Lab.Mode < Lab.Level.Einstein) return null;
+        float sum = 0f; int known = 0, total = 0;
+        foreach (var a in m.Atoms)
+            foreach (var b in a.Bonds)
+            {
+                var o = b.Other(a);
+                if (o == null || o.GetInstanceID() < a.GetInstanceID()) continue;
+                total++;
+                string x = a.El.Sym, y = o.El.Sym;
+                if (string.CompareOrdinal(x, y) > 0) { var t = x; x = y; y = t; }
+                float e;
+                if (BE.TryGetValue(x + "-" + y + b.Order, out e)) { sum += e; known++; }
+            }
+        if (total == 0) return null;
+        string s = Lang.T("Энергия связей ≈ ", "Bond energy ≈ ") + sum.ToString("0") + Lang.T(" кДж/моль", " kJ/mol");
+        if (known < total) s += Lang.T(" (по ", " (from ") + known + Lang.T(" из ", " of ") + total + Lang.T(" связей — для остальных нет справочного числа)", " bonds — no reference value for the rest)");
+        return s + Lang.T(" — столько нужно, чтобы разобрать её на атомы", " — that is what it takes to split it into atoms");
+    }
+
+    // ==================== Эйнштейн: ядро ====================
+
+    /// <summary>Кулоновский барьер слияния двух ядер (МэВ) и порядок времени жизни результата.</summary>
+    public static string NuclearNote(Elements.El a, Elements.El b, int z)
+    {
+        if (Lab.Mode < Lab.Level.Einstein || a == null || b == null) return null;
+        float a1 = Mathf.Max(1f, Mathf.Round(a.Mass)), a2 = Mathf.Max(1f, Mathf.Round(b.Mass));
+        float r = 1.2f * (Mathf.Pow(a1, 1f / 3f) + Mathf.Pow(a2, 1f / 3f));      // фм
+        float e = 1.44f * a.Z * b.Z / r;                                           // МэВ
+        string life = z <= 83 ? Lang.T("ядро может быть стабильным", "the nucleus can be stable")
+                    : z <= 92 ? Lang.T("радиоактивно, живёт от секунд до миллиардов лет", "radioactive, lives from seconds to billions of years")
+                    : z <= 103 ? Lang.T("живёт от минут до лет, в природе почти нет", "lives minutes to years, almost absent in nature")
+                    : z <= 118 ? Lang.T("распадается за миллисекунды–секунды; получены считанные атомы", "decays in milliseconds to seconds; only a handful of atoms were made")
+                    : Lang.T("не получен ни разу; ожидаемая жизнь — микросекунды", "never made; expected lifetime — microseconds");
+        return Lang.T("Кулоновский барьер ≈ ", "Coulomb barrier ≈ ") + e.ToString("0") + Lang.T(" МэВ — столько надо, чтобы ядра коснулись. ", " MeV — the energy needed for the nuclei to touch. ") + life + ".";
     }
 }

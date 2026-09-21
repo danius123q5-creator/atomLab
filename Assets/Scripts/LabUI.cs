@@ -424,7 +424,17 @@ public class LabUI : MonoBehaviour
             ToggleAccelerator();
         GUI.color = Color.white;
 
-        if (GUI.Button(new Rect(panelX + 14f, 106f, W - 28f, 26f),
+        // Уровень точности — на строке готовых веществ, справа. Нажатие листает по кругу.
+        float wLvl = Mathf.Round((W - 28f) * 0.4f);
+        Color[] lvlCol = { new Color(1f, 0.6f, 0.9f), Color.white, new Color(0.6f, 0.85f, 1f), new Color(1f, 0.85f, 0.35f) };
+        GUI.color = lvlCol[(int)Lab.Mode];
+        if (GUI.Button(new Rect(panelX + W - 14f - wLvl, 106f, wLvl, 26f), Lang.T("Уровень: ", "Level: ") + Lab.LevelName(Lab.Mode) + "  ▸", sTab))
+        {
+            Lab.Mode = (Lab.Level)(((int)Lab.Mode + 1) % 4);
+            Lab.I.Say(Lab.LevelHint(Lab.Mode), lvlCol[(int)Lab.Mode]);
+        }
+        GUI.color = Color.white;
+        if (GUI.Button(new Rect(panelX + 14f, 106f, W - 28f - wLvl - 6f, 26f),
             showPresets ? Lang.T("← назад к таблице", "← back to the table") : Lang.T("Готовые вещества (15 штук, со строением)", "Ready substances (15, with structure)"), sTab))
             showPresets = !showPresets;
 
@@ -836,11 +846,15 @@ public class LabUI : MonoBehaviour
         string decode = Lang.Decode(best.Formula);
         float decW = Mathf.Min(620f, SW - (PanelRightGui + 20f) - 20f) - 24f;
         string advice = MolFacts.Advice(best);
+        // ВУЗник: полярность связей; Эйнштейн: ещё и энергия связей. Одна строка на каждое.
+        string pol = MolFacts.Polarity(best), ener = MolFacts.BondEnergy(best);
+        string sci = pol == null ? ener : (ener == null ? pol : pol + "\n" + ener);
+        float sciH = sci == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(sci), Mathf.Max(60f, decW)), 18f, 72f);
         float advH = advice == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(advice), Mathf.Max(60f, decW)), 18f, 70f) + 4f;
         float unsH = unstable == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(unstable), Mathf.Max(60f, decW)), 18f, 70f) + 4f;
         float decH = Mathf.Clamp(sSmall.CalcHeight(new GUIContent(decode), Mathf.Max(60f, decW)), 18f, 54f);
         float dy = decH - 18f;                                                       // сколько добавили переносы
-        float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f + 18f + dy   // +16 расшифровка, +18 размер
+        float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f + 18f + dy + sciH   // +16 расшифровка, +18 размер
                   + unsH + advH;
         cardHeight = h;
         var r = new Rect(x, SH - h - 20f, w, h);
@@ -859,8 +873,13 @@ public class LabUI : MonoBehaviour
         GUI.Label(new Rect(r.x + 14f, r.y + 36f, r.width - 24f, decH), decode, sSmall);
         sSmall.normal.textColor = new Color(0.6f, 0.9f, 1f);
         GUI.Label(new Rect(r.x + 14f, r.y + 54f + dy, r.width - 24f, 18f), MolFacts.SizeLine(best), sSmall);
+        if (sci != null)
+        {
+            sSmall.normal.textColor = Lab.Mode == Lab.Level.Einstein ? new Color(1f, 0.85f, 0.35f) : new Color(0.6f, 0.85f, 1f);
+            GUI.Label(new Rect(r.x + 14f, r.y + 72f + dy, r.width - 24f, sciH), sci, sSmall);
+        }
         sSmall.normal.textColor = keepDec;
-        float oy = 18f + dy;   // всё ниже сдвинуто на строку размера и переносы расшифровки
+        float oy = 18f + dy + sciH;   // всё ниже сдвинуто на строку размера, переносы и научные строки
 
         if (best.Info != null)
         {
