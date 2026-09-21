@@ -17,6 +17,12 @@ public static class Elements
 {
     public enum Cls { Nonmetal, Noble, Alkali, AlkEarth, Metalloid, Halogen, Transition, PostMetal, Lanth, Actin }
 
+    /// <summary>Крупная раскраска таблицы (🔴 21.09, владелец): красный металлы, синий
+    /// неметаллы, зелёный радиоактивные, жёлтый — те, о которых толком ничего не известно.
+    /// Порядок проверки важен: сверхтяжёлые элементы и радиоактивны, и неизучены, поэтому
+    /// «неизвестный» перебивает «радиацию», иначе жёлтого в таблице не было бы совсем.</summary>
+    public enum Paint { Metal, Nonmetal, Radioactive, Unknown }
+
     public class El
     {
         public int Z;               // порядковый номер = число протонов
@@ -36,6 +42,56 @@ public static class Elements
                 int g = Group == 0 ? 3 : Group;         // f-блок считаем по третьей группе
                 float r = 0.30f + 0.085f * Period - 0.0045f * g;
                 return Mathf.Clamp(r, 0.30f, 0.95f);
+            }
+        }
+
+        /// <summary>Радиоактивны: технеций (43), прометий (61) и всё от полония (84) и дальше —
+        /// у этих элементов нет ни одного стабильного изотопа. Это не приблизительно, это
+        /// ровно тот список, который учат в школе как «дальше стабильных нет».</summary>
+        public Paint Paint
+        {
+            get
+            {
+                if (Z >= 104) return Elements.Paint.Unknown;
+                if (Z == 43 || Z == 61 || Z >= 84) return Elements.Paint.Radioactive;
+                switch (Class)
+                {
+                    case Cls.Alkali:
+                    case Cls.AlkEarth:
+                    case Cls.Transition:
+                    case Cls.PostMetal:
+                    case Cls.Lanth:
+                    case Cls.Actin: return Elements.Paint.Metal;
+                    default: return Elements.Paint.Nonmetal;
+                }
+            }
+        }
+
+        public Color PaintColor
+        {
+            get
+            {
+                switch (Paint)
+                {
+                    case Elements.Paint.Metal: return new Color(0.82f, 0.20f, 0.22f);
+                    case Elements.Paint.Nonmetal: return new Color(0.20f, 0.45f, 0.88f);
+                    case Elements.Paint.Radioactive: return new Color(0.20f, 0.72f, 0.32f);
+                    default: return new Color(0.92f, 0.80f, 0.18f);
+                }
+            }
+        }
+
+        public string PaintName
+        {
+            get
+            {
+                switch (Paint)
+                {
+                    case Elements.Paint.Metal: return "металл";
+                    case Elements.Paint.Nonmetal: return "неметалл";
+                    case Elements.Paint.Radioactive: return "радиоактивный";
+                    default: return "неизученный";
+                }
             }
         }
 

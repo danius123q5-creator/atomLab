@@ -211,6 +211,32 @@ public class LabUI : MonoBehaviour
         DrawTable(cw, ch);
     }
 
+
+    /// <summary>Легенда раскраски таблицы. Цвет КЛЕТКИ теперь говорит про класс элемента,
+    /// а шарик в зоне остаётся своего цвета по палитре CPK — это разные вещи, и легенда
+    /// об этом прямо говорит, иначе несовпадение выглядело бы как ошибка.</summary>
+    void DrawLegend(Rect r)
+    {
+        string[] names = { "металлы", "неметаллы", "радиация", "неизученные" };
+        Color[] cols =
+        {
+            new Color(0.82f, 0.20f, 0.22f), new Color(0.20f, 0.45f, 0.88f),
+            new Color(0.20f, 0.72f, 0.32f), new Color(0.92f, 0.80f, 0.18f)
+        };
+        float x = r.x;
+        for (int i = 0; i < 4; i++)
+        {
+            GUI.color = cols[i];
+            GUI.DrawTexture(new Rect(x, r.y + 3f, 12f, 12f), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var sz = sSmall.CalcSize(new GUIContent(names[i]));
+            GUI.Label(new Rect(x + 15f, r.y, sz.x + 4f, 18f), names[i], sSmall);
+            x += 19f + sz.x;
+        }
+        GUI.Label(new Rect(r.x, r.y + 19f, r.width, 30f),
+            "Цвет клетки — класс элемента, цвет шарика в зоне — его собственный (палитра CPK).", sSmall);
+    }
+
     void DrawTable(float cw, float ch)
     {
         // Подпись про выбранный элемент — над таблицей, чтобы не прыгала.
@@ -219,19 +245,19 @@ public class LabUI : MonoBehaviour
         {
             GUI.Label(new Rect(panelX + 14f, 104f, W - 28f, 44f),
                 h.Z + ". " + h.Name + " (" + h.Sym + ")   масса " + h.Mass.ToString("0.###") +
-                "   связей: " + h.Valence + (h.EN > 0f ? "   ЭО " + h.EN.ToString("0.00") : "") + "\n" + h.ClassName, sSmall);
+                "   связей: " + h.Valence + (h.EN > 0f ? "   ЭО " + h.EN.ToString("0.00") : "") +
+                "\n" + h.ClassName + "  ·  " + h.PaintName, sSmall);
         }
         else
         {
-            GUI.Label(new Rect(panelX + 14f, 104f, W - 28f, 44f),
-                "118 элементов. Цвет клетки — цвет атома в зоне (палитра CPK).\nЖёлтая связь — ионная, серая — ковалентная.", sSmall);
+            DrawLegend(new Rect(panelX + 14f, 104f, W - 28f, 44f));
         }
 
         foreach (var el in Elements.All)
         {
             Rect r = CellRect(el);
             if (r.yMax < tableTop - 4f || r.y > Screen.height) continue;    // вне видимой части — не рисуем
-            Color c = el.Color;
+            Color c = el.PaintColor;
             bool isHover = (h == el);
             GUI.color = isHover ? Color.Lerp(c, Color.white, 0.45f) : c;
             GUI.DrawTexture(r, Texture2D.whiteTexture);
