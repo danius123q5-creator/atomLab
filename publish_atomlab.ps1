@@ -50,7 +50,12 @@ Push-Location $root
 $remoteUrl = "https://github.com/$owner/$repoName.git"
 $haveOrigin = (git remote) -contains "origin"
 if ($haveOrigin) { git remote set-url origin $remoteUrl } else { git remote add origin $remoteUrl }
-git -c http.proxy=$proxy -c http.extraHeader="Authorization: Bearer $tok" push -u origin HEAD:main
+# The header must be ONE argument. Written inline as -c http.extraHeader="Authorization:
+# Bearer x" PowerShell splits it on the space, git never sees the token and falls back to
+# asking for a username - which in batch mode is a hard "terminal prompts disabled".
+$hdrArg = "http.extraHeader=Authorization: Bearer " + $tok
+$env:GIT_TERMINAL_PROMPT = "0"
+git -c http.proxy=$proxy -c $hdrArg push -u origin HEAD:main
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "git push failed with code $LASTEXITCODE" }
 Pop-Location
 Write-Host "Sources pushed."
