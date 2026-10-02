@@ -222,6 +222,7 @@ public class LabUI : MonoBehaviour
         DrawUpdate();
         DrawHoverTip();
         DrawCellTip();
+        DrawCursorShadow();
     }
 
     /// <summary>21.09, из очереди владельца на 2.2: «подсказка при наведении на атом:
@@ -231,6 +232,36 @@ public class LabUI : MonoBehaviour
     /// <summary>21.09, владелец: «при наведении курсора на элемент выводить стату над
     /// курсором». Раньше данные элемента печатались строкой над таблицей — глаз уходил
     /// от клетки. Теперь та же строка всплывает прямо над курсором.</summary>
+
+    void DrawCursorShadow()
+    {
+        if (Input.touchCount > 0 || Event.current.type != EventType.Repaint) return;
+        Color previous = GUI.color;
+        Vector2 point = MouseGui;
+        GUI.color = new Color(0f, 0f, 0f, 0.32f);
+        GUI.DrawTexture(new Rect(point.x + 3f, point.y + 5f, 18f, 18f), DotTex);
+        GUI.color = previous;
+    }
+
+    static string ElementFacts(Elements.El element)
+    {
+        bool metal = element.Class == Elements.Cls.Alkali ||
+            element.Class == Elements.Cls.AlkEarth || element.Class == Elements.Cls.Transition ||
+            element.Class == Elements.Cls.PostMetal || element.Class == Elements.Cls.Lanth ||
+            element.Class == Elements.Cls.Actin;
+        string type = element.Class == Elements.Cls.Metalloid ? Lang.T("Полуметалл", "Metalloid") :
+            metal ? Lang.T("Металл", "Metal") : Lang.T("Неметалл", "Nonmetal");
+        string group = element.Group > 0 ? element.Group.ToString() :
+            Lang.T("f-блок (без группы 1-18)", "f-block (no group 1-18)");
+        string row = element.Class == Elements.Cls.Lanth ? Lang.T("лантаноиды", "lanthanides") :
+            element.Class == Elements.Cls.Actin ? Lang.T("актиноиды", "actinides") :
+            element.Period.ToString();
+        return Lang.T("Атомная масса: ", "Atomic mass: ") + element.Mass.ToString("0.###") +
+            Lang.T(" а.е.м.", " u") + "  |  " + type + "\n" +
+            Lang.T("Группа: ", "Group: ") + group + Lang.T("  Период: ", "  Period: ") +
+            element.Period + Lang.T("  Ряд: ", "  Row: ") + row;
+    }
+
     void DrawCellTip()
     {
         if (Input.touchCount > 0 || carrying != null || showPresets) return;
@@ -238,12 +269,12 @@ public class LabUI : MonoBehaviour
         var h = hover;
         string cap = h.MaxBonds > h.Valence ? h.Valence + Lang.T(" (до ", " (up to ") + h.MaxBonds + ")" : h.Valence.ToString();
         string text = h.Z + ". " + Lang.Name(h) + " (" + h.Sym + ")\n" +
-                      Lang.T("Масса: ", "Mass: ") + h.Mass.ToString("0.###") + "\n" +
+                      ElementFacts(h) + "\n" +
                       Lang.T("Связей: ", "Bonds: ") + cap +
                       (h.EN > 0f ? Lang.T("   ЭО ", "   EN ") + h.EN.ToString("0.00") : "") + "\n" +
                       h.ClassName + "  ·  " + h.PaintName;
         Vector2 m = Event.current.mousePosition;
-        var r = new Rect(m.x - 110f, m.y - 92f, 250f, 80f);           // НАД курсором, чтобы не закрывать клетку
+        var r = new Rect(m.x - 150f, m.y - 120f, Mathf.Min(360f, SW - 8f), 108f);           // НАД курсором, чтобы не закрывать клетку
         if (r.y < 4f) r.y = m.y + 22f;
         if (r.x < 4f) r.x = 4f;
         if (r.xMax > SW - 4f) r.x = SW - 4f - r.width;
@@ -267,10 +298,10 @@ public class LabUI : MonoBehaviour
         string cap = el.MaxBonds > el.Valence ? el.Valence + Lang.T(" (до ", " (up to ") + el.MaxBonds + ")" : el.Valence.ToString();
         string charge = el.Charge == 0 ? Lang.T("нейтральный", "neutral") : (el.Charge > 0 ? "+" + el.Charge : el.Charge.ToString());
         string text = Lang.Name(el) + " (" + el.Sym + ")\n" +
-                      Lang.T("Заряд: ", "Charge: ") + charge + "\n" +
+                      ElementFacts(el) + "\n" + Lang.T("Заряд: ", "Charge: ") + charge + "\n" +
                       Lang.T("Связи: занято ", "Bonds: used ") + used + Lang.T(" из ", " of ") + cap;
         Vector2 m = MouseGui;
-        var r = new Rect(m.x + 18f, m.y + 12f, 220f, 58f);
+        var r = new Rect(m.x + 18f, m.y + 12f, Mathf.Min(360f, SW - 12f), 104f);
         if (r.xMax > SW - 6f) r.x = m.x - r.width - 12f;
         if (r.yMax > SH - 6f) r.y = m.y - r.height - 8f;
         GUI.color = new Color(0f, 0f, 0f, 0.8f);
@@ -1074,6 +1105,12 @@ public class LabUI : MonoBehaviour
         // Расшифровка длинной формулы не влезала в строку и обрезалась («… никель · 7»):
         // даём ей переноситься и растим карточку на лишние строки.
         string decode = Lang.Decode(best.Formula);
+        int quantity = CompositionFacts.CountFormula(lab.Mols, best.Formula);
+        string composition = CompositionFacts.Describe(best) + "\n" +
+            Lang.T("Количество: ", "Count: ") + quantity +
+            Lang.T(" молекул", " molecules") +
+            (quantity == 2 ? Lang.T(" — соединение встречается дважды", " — compound occurs twice") : "") +
+            "\n" + Lang.T("В зоне: ", "In the zone: ") + CompositionFacts.ZoneSummary(lab.Mols);
         float decW = Mathf.Min(620f, SW - (PanelRightGui + 20f) - 20f) - 24f;
         string advice = MolFacts.Advice(best);
         // ВУЗник: полярность связей; Эйнштейн: ещё и энергия связей. Одна строка на каждое.
@@ -1086,7 +1123,8 @@ public class LabUI : MonoBehaviour
         string props = best.Info == null ? MolFacts.Properties(best) : null;
         float propH = props == null ? 0f : Mathf.Clamp(sSmall.CalcHeight(new GUIContent(props), Mathf.Max(60f, decW)), 18f, 90f) + 4f;
         float decH = Mathf.Clamp(sSmall.CalcHeight(new GUIContent(decode), Mathf.Max(60f, decW)), 18f, 54f);
-        float dy = decH - 18f;                                                       // сколько добавили переносы
+        float compositionH = sSmall.CalcHeight(new GUIContent(composition), Mathf.Max(60f, decW)) + 6f;
+        float dy = decH - 18f + compositionH;                                                       // сколько добавили переносы
         float h = (best.Info != null ? (hasUse ? 128f : 104f) : 78f) + 16f + 18f + dy + sciH   // +16 расшифровка, +18 размер
                   + unsH + advH + propH;
         cardHeight = h;
@@ -1100,10 +1138,11 @@ public class LabUI : MonoBehaviour
 
         sBig.normal.textColor = best.Info != null ? new Color(0.65f, 1f, 0.7f) : Color.white;
         sBig.richText = true;
-        GUI.Label(new Rect(r.x + 14f, r.y + 6f, r.width - 24f, 34f), Lang.Sub(best.Formula, 18), sBig);
+        GUI.Label(new Rect(r.x + 14f, r.y + 6f, r.width - 24f, 34f), Lang.Sub((quantity > 1 ? quantity.ToString() : "") + best.Formula, 18), sBig);
         var keepDec = sSmall.normal.textColor;
         sSmall.normal.textColor = new Color(0.8f, 0.85f, 0.95f);
         GUI.Label(new Rect(r.x + 14f, r.y + 36f, r.width - 24f, decH), decode, sSmall);
+        GUI.Label(new Rect(r.x + 14f, r.y + 36f + decH, r.width - 24f, compositionH), composition, sSmall);
         sSmall.normal.textColor = new Color(0.6f, 0.9f, 1f);
         GUI.Label(new Rect(r.x + 14f, r.y + 54f + dy, r.width - 24f, 18f), MolFacts.SizeLine(best), sSmall);
         if (sci != null)

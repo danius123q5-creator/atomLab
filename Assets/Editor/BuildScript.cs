@@ -84,7 +84,7 @@ public static class BuildScript
         var opts = new BuildPlayerOptions
         {
             scenes = scenes,
-            locationPathName = "Build/Windows/AtomLab.exe",
+            locationPathName = System.Environment.GetEnvironmentVariable("ATOMLAB_BUILD_PATH") ?? "Build/Windows/AtomLab.exe",
             target = BuildTarget.StandaloneWindows64,
             options = BuildOptions.None,
         };
@@ -115,7 +115,7 @@ public static class BuildScript
         var opts = new BuildPlayerOptions
         {
             scenes = scenes,
-            locationPathName = "Build/Linux/AtomLab.x86_64",
+            locationPathName = System.Environment.GetEnvironmentVariable("ATOMLAB_BUILD_PATH") ?? "Build/Linux/AtomLab.x86_64",
             target = BuildTarget.StandaloneLinux64,
             options = BuildOptions.None,
         };
@@ -145,7 +145,7 @@ public static class BuildScript
         var opts = new BuildPlayerOptions
         {
             scenes = scenes,
-            locationPathName = "Build/Mac/AtomLab.app",
+            locationPathName = System.Environment.GetEnvironmentVariable("ATOMLAB_BUILD_PATH") ?? "Build/Mac/AtomLab.app",
             target = BuildTarget.StandaloneOSX,
             options = BuildOptions.None,
         };
@@ -179,7 +179,7 @@ public static class BuildScript
         var opts = new BuildPlayerOptions
         {
             scenes = scenes,
-            locationPathName = "Build/Android/AtomLab.apk",
+            locationPathName = System.Environment.GetEnvironmentVariable("ATOMLAB_BUILD_PATH") ?? "Build/Android/AtomLab.apk",
             target = BuildTarget.Android,
             targetGroup = BuildTargetGroup.Android,
             options = BuildOptions.None,

@@ -754,7 +754,22 @@ public class SelfTest : MonoBehaviour
                   (copperOk ? " OK" : " MISMATCH"));
         lab.ClearZone();
 
+        // Independent checks for molecule coefficients and composition masses.
+        var factsMol = new Lab.Mol { Formula = "H2O" };
+        factsMol.Atoms.Add(Atom.Spawn(Elements.BySymbol("H"), c));
+        factsMol.Atoms.Add(Atom.Spawn(Elements.BySymbol("H"), c + Vector3.right * 3f));
+        factsMol.Atoms.Add(Atom.Spawn(Elements.BySymbol("O"), c + Vector3.right * 6f));
+        var factsCopies = new List<Lab.Mol> { factsMol, factsMol };
+        double factsMass = CompositionFacts.MolecularMass(factsMol);
+        bool compositionOk = System.Math.Abs(factsMass - 18.015) < 0.03 &&
+            CompositionFacts.CountFormula(factsCopies, "H2O") == 2 &&
+            CompositionFacts.ZoneSummary(factsCopies) == "2H2O" &&
+            CompositionFacts.Describe(factsMol).Contains("66.7%");
+        Debug.Log("SELFTEST composition mass=" + factsMass + " coefficient=" +
+            CompositionFacts.ZoneSummary(factsCopies) + (compositionOk ? " OK" : " MISMATCH"));
+        lab.ClearZone();
+
         Debug.Log("SELFTEST water=" + water + " neonAlone=" + neonAlone + " accel=" + accOk + " synth=" + synthOk + " iso=" + isoOk + " ion=" + ionOk + " neutr=" + neutrOk + " zinc=" + zincOk + " copper=" + copperOk);
-        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0 && accOk && synthOk && isoOk && ionOk && neutrOk && zincOk && copperOk) ? 0 : 2);
+        if (!DemoOnly) Application.Quit((water && neonAlone && bad == 0 && accOk && synthOk && isoOk && ionOk && neutrOk && zincOk && copperOk && compositionOk) ? 0 : 2);
     }
 }
